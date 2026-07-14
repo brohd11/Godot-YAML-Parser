@@ -96,6 +96,22 @@ godot --headless --script res://tests/ci_test.gd    # exits 0 on pass, 1 on fail
 Suites live in `tests/suites/`; `tests/autorun/` is scanned automatically for `YAMLTest`
 subclasses. CI runs the same entry point.
 
+### Conformance scoreboard
+
+The parser can also be scored against the official
+[yaml-test-suite](https://github.com/yaml/yaml-test-suite). This is a report, not a gate: it always
+exits 0, and CI does not run it.
+
+```sh
+python3 tests/yaml_test_suite/gen_suite.py     # build the corpus (once)
+godot --headless --script res://tests/yaml_test_suite/conformance_test.gd
+```
+
+It currently passes **118 of the 279** cases that carry a JSON expectation. The suite mostly measures
+strictness, which is the axis this parser trades away, so the 94 must-fail cases are reported rather
+than scored -- `parse()` repairs input instead of rejecting it, and so cannot fail them. Failures are
+grouped by feature, which turns the "Known limitations" list above into a counted backlog.
+
 ## Origin
 
 Started as a fork of [YAML.gd](https://github.com/lowlevel-1989/YAML.gd) by Vinicio Valbuena. The

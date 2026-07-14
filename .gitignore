@@ -14,3 +14,5 @@ addons/*
 !addons/addon_lib/
 addons/addon_lib/*
 !addons/addon_lib/yaml_parser/
+
+tests/yaml_test_suite/results.json
