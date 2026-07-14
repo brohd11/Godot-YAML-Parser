@@ -10,6 +10,7 @@ options:
   use_tag_in_cfg: true
   remove_cfg_deps: true
   include_min_version: true
+  move_global_files: false
   parser_settings:
     use_relative_paths: false
     backport_target: 100
@@ -17,14 +18,14 @@ options:
       namespace_rename: {}
     parse_gd:
       replace_editor_interface: false
-      class_rename_ignore: []
+      class_rename_ignore: ["YAMLParser"]
       backport_string_renames: {}
     parse_tscn: {}
     parse_tres: {}
 exports:
   -
     source: "res://addons/addon_lib/yaml_parser"
-    export_folder: "yaml-parser{{version=yaml_parser}}/yaml_parser"
+    export_folder: "yaml-parser{{version=yaml_parser}}/addon_lib/yaml_parser"
     exclude:
       directories:
         - "res://addons/addon_lib/yaml_parser/export_ignore"
