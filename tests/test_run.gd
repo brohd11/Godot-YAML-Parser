@@ -1,4 +1,4 @@
-## Test entry point for YAML.gd.
+## Test entry point for YAML Parser.
 ##
 ## CI:      godot --headless --script res://tests/ci_test.gd
 ## Console: test --add res://tests/test_run.gd   (once)
@@ -17,7 +17,7 @@ static func run_tests() -> Dictionary:
 	var output: Array[String] = []
 	var all_passed := true
 
-	output.append("YAML.gd Tests")
+	output.append("YAML Parser Tests")
 	for path in SUITES:
 		output.append("")
 		output.append(" --- Running Test: %s ---" % path.get_file())

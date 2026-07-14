@@ -6,5 +6,11 @@
 ignore/
 
 namespace/
-addons/
-!addons/yaml_dot_gd
+
+# Every sibling addon is a dev-environment dependency (see addon_manifest.yml) except
+# the library this repo actually ships. A negation cannot re-include a path whose parent
+# directory is excluded, so the chain down to it has to be opened one level at a time.
+addons/*
+!addons/addon_lib/
+addons/addon_lib/*
+!addons/addon_lib/yaml_parser/

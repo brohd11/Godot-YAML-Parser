@@ -31,7 +31,7 @@ static func run() -> Dictionary:
 		}
 	}
 	test_count += 1
-	var result1 = YAMLParser.parse(yaml1)
+	var result1 = YAMLTest.parse_data(yaml1)
 	if result1 == expected1:
 		success_count += 1
 		out.append("Test 1: PASSED - Complex nested structure")
@@ -58,7 +58,7 @@ static func run() -> Dictionary:
 		}
 	}
 	test_count += 1
-	var result2 = YAMLParser.parse(yaml2)
+	var result2 = YAMLTest.parse_data(yaml2)
 	if result2 == expected2:
 		success_count += 1
 		out.append("Test 2: PASSED - Multiple levels of nesting")
@@ -84,7 +84,7 @@ static func run() -> Dictionary:
 		]
 	}
 	test_count += 1
-	var result3 = YAMLParser.parse(yaml3)
+	var result3 = YAMLTest.parse_data(yaml3)
 	if result3 == expected3:
 		success_count += 1
 		out.append("Test 3: PASSED - Mixed list types")
@@ -108,7 +108,7 @@ static func run() -> Dictionary:
 		}
 	}
 	test_count += 1
-	var result4 = YAMLParser.parse(yaml4)
+	var result4 = YAMLTest.parse_data(yaml4)
 	if result4 == expected4:
 		success_count += 1
 		out.append("Test 4: PASSED - Comments and empty lines")
@@ -129,7 +129,7 @@ static func run() -> Dictionary:
 		"time": "12:30:45"
 	}
 	test_count += 1
-	var result5 = YAMLParser.parse(yaml5)
+	var result5 = YAMLTest.parse_data(yaml5)
 	if result5 == expected5:
 		success_count += 1
 		out.append("Test 5: PASSED")
@@ -152,7 +152,7 @@ static func run() -> Dictionary:
 		"multi": "This is a multiline string.\n# This is NOT a comment."
 	}
 	test_count += 1
-	var result6 = YAMLParser.parse(yaml6)
+	var result6 = YAMLTest.parse_data(yaml6)
 	if typeof(result6) == TYPE_DICTIONARY and result6 == expected6:
 		success_count += 1
 		out.append("Test 6: PASSED - Inline Comments and tricky strings")

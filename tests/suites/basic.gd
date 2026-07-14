@@ -19,7 +19,7 @@ static func run() -> Dictionary:
 		"key3": true
 	}
 	test_count += 1
-	var result1 = YAMLParser.parse(yaml1)
+	var result1 = YAMLTest.parse_data(yaml1)
 	if result1.hash() == expected1.hash():
 		success_count += 1
 		out.append("Test 1: PASSED - Simple key-value pairs")
@@ -42,7 +42,7 @@ static func run() -> Dictionary:
 		}
 	}
 	test_count += 1
-	var result2 = YAMLParser.parse(yaml2)
+	var result2 = YAMLTest.parse_data(yaml2)
 	if result2.hash() == expected2.hash():
 		success_count += 1
 		out.append("Test 2: PASSED - Nested dictionaries")
@@ -62,7 +62,7 @@ static func run() -> Dictionary:
 		"items": ["item1", 42, false]
 	}
 	test_count += 1
-	var result3 = YAMLParser.parse(yaml3)
+	var result3 = YAMLTest.parse_data(yaml3)
 	if typeof(result3) == TYPE_DICTIONARY and result3.has("items") and typeof(result3["items"]) == TYPE_ARRAY:
 		var items = result3["items"]
 		if items.size() == 3 and items[0] == "item1" and items[1] == 42 and items[2] == false:
@@ -91,7 +91,7 @@ static func run() -> Dictionary:
 		}
 	}
 	test_count += 1
-	var result4 = YAMLParser.parse(yaml4)
+	var result4 = YAMLTest.parse_data(yaml4)
 	if result4.hash() == expected4.hash():
 		success_count += 1
 		out.append("Test 4: PASSED - Mixed structures")
@@ -113,7 +113,7 @@ static func run() -> Dictionary:
 		"key3": "value"
 	}
 	test_count += 1
-	var result5 = YAMLParser.parse(yaml5)
+	var result5 = YAMLTest.parse_data(yaml5)
 	if typeof(result5) == TYPE_DICTIONARY and result5.has("key1") and result5["key1"] == null and result5.has("key2") and result5["key2"] == null and result5.get("key3") == "value":
 		success_count += 1
 		out.append("Test 5: PASSED - Empty values")

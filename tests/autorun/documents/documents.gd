@@ -12,28 +12,24 @@ func run() -> bool:
 	_check(list_doc, list_doc_exp)
 
 	# parse() takes the first document; parse_all() takes every one.
-	_expect(YAMLParser.parse(two_docs), {"a": 1})
-	_expect(YAMLParser.parse_all(two_docs), [{"a": 1}, {"b": 2}])
-	_expect(YAMLParser.parse_all(leading_marker), [{"name": "test", "value": 1}])
-	_expect(YAMLParser.parse_all(""), [])
-	_expect(YAMLParser.parse_all("# just a comment\n"), [])
+	var parser = YAMLParser.new()
+	parser.parse(two_docs)
+	_expect(parser.data, {"a": 1}, "parse takes first doc")
+	parser.parse_all(two_docs)
+	_expect(parser.data, [{"a": 1}, {"b": 2}], "parse_all takes every doc")
+	parser.parse_all(leading_marker)
+	_expect(parser.data, [{"name": "test", "value": 1}], "parse_all leading marker")
+	parser.parse_all("")
+	_expect(parser.data, [], "parse_all empty")
+	parser.parse_all("# just a comment\n")
+	_expect(parser.data, [], "parse_all comment only")
 
 	# A dash is a list entry only when alone or followed by a space, so "- -" still
 	# nests but "---" does not.
-	_expect(YAMLParser.parse("- - a\n- b"), [["a"], "b"])
+	parser.parse("- - a\n- b")
+	_expect(parser.data, [["a"], "b"], "nested dash is not a marker")
 
 	return passed()
-
-
-# Compare a value the test computed itself (no dump round-trip).
-func _expect(got, expected) -> void:
-	if got == expected:
-		if pass_state == -1:
-			pass_state = 0
-		return
-	pass_state = 1
-	_log(str("   got: ", got))
-	_log(str("   exp: ", expected))
 
 
 var leading_marker = """---

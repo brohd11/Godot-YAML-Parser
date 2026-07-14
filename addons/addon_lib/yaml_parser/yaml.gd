@@ -131,69 +131,97 @@ static func _feed_all(sc: _Scan, s: String) -> void:
 
 # ---------------------------------------------------------------------------
 # Public entry points.
+#
+# Modelled on Godot's own JSON class: an entry point returns an Error and leaves
+# the result in `data`. Nothing here ever prints -- a caller that wants a failure
+# in the log pushes it themselves, from get_error_message() and warnings.
 # ---------------------------------------------------------------------------
+
+## Result of the last parse. Null if it failed.
+var data: Variant = null
+## Non-fatal problems from the last parse: the document still parsed, but something
+## in it was repaired (a tab indent, an unterminated flow collection).
+var warnings: Array[String] = []
+
+var _err: Error = OK
+var _err_msg := ""
+
+
+## The reason the last call failed, or "" if it succeeded.
+func get_error_message() -> String:
+	return _err_msg
+
 
 # Parse the first (or only) document. A file with no `---` marker is one document,
 # so this keeps its original meaning.
-static func parse(yaml_content: String) -> Variant:
+func parse(yaml_content: String) -> Error:
+	_reset()
 	var docs = _split_documents(yaml_content)
 	if docs.is_empty():
-		return null
-	return _parse_text(docs[0])
+		return OK
+	data = _parse_text(docs[0])
+	return OK
 
 
-# Parse every `---` separated document in the text.
-static func parse_all(yaml_content: String) -> Array:
+# Parse every `---` separated document in the text. `data` is an Array.
+func parse_all(yaml_content: String) -> Error:
+	_reset()
 	var out = []
 	for text in _split_documents(yaml_content):
 		out.append(_parse_text(text))
-	return out
+	data = out
+	return OK
 
 
-# Parse the first (or only) document in `path`. Returns null if it cannot be read.
-static func parse_file(path: String) -> Variant:
+# Parse the first (or only) document in `path`.
+func parse_file(path: String) -> Error:
+	_reset()
 	var text = _read_file(path)
 	if text == null:
-		return null
+		return _err
 	return parse(text)
 
 
-# Parse every document in `path`. Returns [] if it cannot be read.
-static func parse_all_file(path: String) -> Array:
+# Parse every document in `path`. `data` is an Array.
+func parse_all_file(path: String) -> Error:
+	_reset()
 	var text = _read_file(path)
 	if text == null:
-		return []
+		data = []
+		return _err
 	return parse_all(text)
 
 
-# Dump `data` and write it to `path`. Returns false if it cannot be written.
-static func save_file(path: String, data) -> bool:
-	var f = FileAccess.open(path, FileAccess.WRITE)
-	if f == null:
-		push_error("YAML: cannot write '%s': %s" % [path, error_string(FileAccess.get_open_error())])
-		return false
-	f.store_string(dump(data) + "\n")
-	f.close()
-	return true
+func _reset() -> void:
+	data = null
+	warnings.clear()
+	_err = OK
+	_err_msg = ""
 
 
-# Read a file whole, or push_error and return null. The parser has no error channel
-# and never throws, so an unreadable path is reported the same way a malformed
-# document is: loudly in the debugger, with a null the caller can check.
-static func _read_file(path: String) -> Variant:
+# Record a failure and hand back its code, so a caller can `return _fail(...)`.
+func _fail(code: Error, msg: String) -> Error:
+	_err = code
+	_err_msg = msg
+	return code
+
+
+# Read a file whole, or record why it could not be read and return null.
+func _read_file(path: String) -> Variant:
 	if not FileAccess.file_exists(path):
-		push_error("YAML: file not found: '%s'" % path)
+		_fail(ERR_FILE_NOT_FOUND, "YAML: file not found: '%s'" % path)
 		return null
 	var f = FileAccess.open(path, FileAccess.READ)
 	if f == null:
-		push_error("YAML: cannot read '%s': %s" % [path, error_string(FileAccess.get_open_error())])
+		_fail(ERR_FILE_CANT_OPEN, "YAML: cannot read '%s': %s"
+				% [path, error_string(FileAccess.get_open_error())])
 		return null
 	var text = f.get_as_text()
 	f.close()
 	return text
 
 
-static func _parse_text(text: String) -> Variant:
+func _parse_text(text: String) -> Variant:
 	var cur = _Cursor.new(text)
 	var j = cur.peek()
 	if j == -1:
@@ -236,12 +264,12 @@ static func _split_documents(text: String) -> Array:
 # YAML forbids tabs for indentation, and _get_indent_level counts spaces only, so a
 # tab-indented line reads as column 0 and the structure silently collapses. Say so
 # rather than mangle the document quietly.
-static func _warn_tabs(cur: _Cursor) -> void:
+func _warn_tabs(cur: _Cursor) -> void:
 	for i in range(cur.lines.size()):
 		var line = cur.lines[i]
 		for c in line:
 			if c == "\t":
-				push_warning("YAML: tab used for indentation on line %d; YAML requires spaces" % [i + 1])
+				warnings.append("YAML: tab used for indentation on line %d; YAML requires spaces" % [i + 1])
 				return
 			if c != " ":
 				break
@@ -249,7 +277,7 @@ static func _warn_tabs(cur: _Cursor) -> void:
 
 # Parse all sibling nodes at exactly `indent`. Decides map vs list from the
 # first significant line at that indent.
-static func _parse_block(cur: _Cursor, indent: int) -> Variant:
+func _parse_block(cur: _Cursor, indent: int) -> Variant:
 	var j = cur.peek()
 	if j == -1:
 		return null
@@ -277,7 +305,7 @@ static func _parse_block(cur: _Cursor, indent: int) -> Variant:
 # A block whose first line is a plain scalar. The block owns every line down to
 # the first one shallower than `indent` -- a scalar block has no siblings by
 # construction -- and YAML folds each line break in a plain scalar to one space.
-static func _parse_plain_scalar(cur: _Cursor, first: String, indent: int) -> Variant:
+func _parse_plain_scalar(cur: _Cursor, first: String, indent: int) -> Variant:
 	var parts = PackedStringArray([first])
 	while true:
 		var j = cur.peek()
@@ -292,7 +320,7 @@ static func _parse_plain_scalar(cur: _Cursor, first: String, indent: int) -> Var
 	return _parse_value(" ".join(parts))
 
 
-static func _parse_map(cur: _Cursor, indent: int) -> Dictionary:
+func _parse_map(cur: _Cursor, indent: int) -> Dictionary:
 	var result = {}
 	while true:
 		var j = cur.peek()
@@ -321,7 +349,7 @@ static func _parse_map(cur: _Cursor, indent: int) -> Dictionary:
 
 # After a "key:" with no inline value, decide between a nested block, a
 # same-indent block sequence, or a plain null.
-static func _parse_value_after_key(cur: _Cursor, indent: int) -> Variant:
+func _parse_value_after_key(cur: _Cursor, indent: int) -> Variant:
 	var nj = cur.peek()
 	if nj == -1:
 		return null
@@ -336,7 +364,7 @@ static func _parse_value_after_key(cur: _Cursor, indent: int) -> Variant:
 	return null
 
 
-static func _parse_list(cur: _Cursor, indent: int) -> Array:
+func _parse_list(cur: _Cursor, indent: int) -> Array:
 	var result = []
 	while true:
 		var j = cur.peek()
@@ -408,7 +436,7 @@ static func _parse_list(cur: _Cursor, indent: int) -> Array:
 
 # Collect additional "key: value" pairs of a list item's map (lines at exactly
 # item_indent that are not themselves list entries).
-static func _merge_item_keys(cur: _Cursor, d: Dictionary, item_indent: int) -> void:
+func _merge_item_keys(cur: _Cursor, d: Dictionary, item_indent: int) -> void:
 	while true:
 		var j = cur.peek()
 		if j == -1:
@@ -433,7 +461,7 @@ static func _merge_item_keys(cur: _Cursor, d: Dictionary, item_indent: int) -> v
 
 # Handle "- - x" by reconstructing a sub-document at item_indent: the remainder
 # of the dash line (re-padded) plus the following lines that belong to it.
-static func _parse_nested_dash_list(cur: _Cursor, header_idx: int, item_indent: int, parent_indent: int) -> Variant:
+func _parse_nested_dash_list(cur: _Cursor, header_idx: int, item_indent: int, parent_indent: int) -> Variant:
 	var raw0 = cur.line_at(header_idx)
 	var stripped = raw0.substr(parent_indent).lstrip(" ")
 	var after = stripped.substr(1).lstrip(" ")  # text after the first dash
@@ -463,7 +491,7 @@ static func _parse_nested_dash_list(cur: _Cursor, header_idx: int, item_indent: 
 
 # Consume a block scalar (| or >) by lookahead. The block ends at the first
 # non-blank line whose indent is less than the block's established indent.
-static func _consume_block_scalar(cur: _Cursor, header: String, parent_indent: int) -> String:
+func _consume_block_scalar(cur: _Cursor, header: String, parent_indent: int) -> String:
 	var style = ML_LITERAL if header.begins_with("|") else ML_FOLDED
 	var chomping = "clip"
 	if header.ends_with("-"):
@@ -546,7 +574,7 @@ static func _process_multiline_content(content: Array, style: int, chomping: Str
 # Advances the cursor past the continuation lines of a multi-line flow, and of a
 # plain scalar that runs on past its key line. `indent` is the indent of the line
 # the value came from: continuation lines must be deeper than it.
-static func _parse_scalar_or_quoted(cur: _Cursor, s: String, indent: int) -> Variant:
+func _parse_scalar_or_quoted(cur: _Cursor, s: String, indent: int) -> Variant:
 	return _parse_value(_continue_plain_scalar(cur, _complete_flow(cur, s), indent))
 
 
@@ -558,7 +586,7 @@ static func _parse_scalar_or_quoted(cur: _Cursor, s: String, indent: int) -> Var
 # This is unambiguous rather than a guess -- in valid YAML a deeper line following
 # an INLINE value can only be a continuation of it. A block scalar is dispatched
 # before we get here, a flow is already consumed, and peek() skips comment lines.
-static func _continue_plain_scalar(cur: _Cursor, text: String, indent: int) -> String:
+func _continue_plain_scalar(cur: _Cursor, text: String, indent: int) -> String:
 	if text.is_empty() or text[0] in ["[", "{", '"', "'"]:
 		return text
 	var parts = PackedStringArray([text])
@@ -584,7 +612,7 @@ static func _continue_plain_scalar(cur: _Cursor, text: String, indent: int) -> S
 # Raw lines rather than peek(): blank lines and full-line comments are legal
 # inside a flow, and a closing bracket may legally sit in column 0 -- a
 # multi-line flow simply cannot be bounded by indentation.
-static func _complete_flow(cur: _Cursor, first: String) -> String:
+func _complete_flow(cur: _Cursor, first: String) -> String:
 	# Only a value that _parse_value would itself treat as a flow may consume
 	# lines. Without this gate a plain scalar holding a stray bracket ("todo [wip")
 	# would open a depth and swallow the rest of the document.
@@ -608,7 +636,7 @@ static func _complete_flow(cur: _Cursor, first: String) -> String:
 			parts.append(piece)
 
 	if sc.depth() > 0:
-		push_warning("YAML: unterminated flow collection, auto-closed with '%s'" % sc.closers())
+		warnings.append("YAML: unterminated flow collection, auto-closed with '%s'" % sc.closers())
 		parts.append(sc.closers())
 
 	# A single space, because a plain or quoted scalar may itself span lines and
@@ -840,22 +868,38 @@ static func _split_top_level(s: String, delim: String) -> Array:
 # ---------------------------------------------------------------------------
 # Dump
 # ---------------------------------------------------------------------------
-static func dump(data, indent: int = 0) -> String:
-	if data is Dictionary or data is Array:
-		if data.is_empty():
-			return "{}" if data is Dictionary else "[]"
+## Dump `data_to_dump` and write it to `path`, creating the directory if it does not exist.
+## Static: dumping carries no state to report, so there is nothing to instantiate.
+static func dump_to_file(data_to_dump: Variant, path: String) -> Error:
+	var dir = path.get_base_dir()
+	if not DirAccess.dir_exists_absolute(dir):
+		var mk = DirAccess.make_dir_recursive_absolute(dir)
+		if mk != OK:
+			return mk
+	var f = FileAccess.open(path, FileAccess.WRITE)
+	if f == null:
+		return FileAccess.get_open_error()
+	f.store_string(dump(data_to_dump) + "\n")
+	f.close()
+	return OK
+
+
+static func dump(data_to_dump, indent: int = 0) -> String:
+	if data_to_dump is Dictionary or data_to_dump is Array:
+		if data_to_dump.is_empty():
+			return "{}" if data_to_dump is Dictionary else "[]"
 	else:
 		# A scalar document. Only reachable at the top level: the recursion below
 		# renders scalar leaves with _scalar() and never calls back into dump().
-		return _scalar(data)
+		return _scalar(data_to_dump)
 
 	var lines = []
 	var pad = "  ".repeat(indent)
 
-	if data is Dictionary:
-		for key in data:
+	if data_to_dump is Dictionary:
+		for key in data_to_dump:
 			var safe_key = _scalar(key)
-			var val = data[key]
+			var val = data_to_dump[key]
 			if val is Dictionary or val is Array:
 				if val.is_empty():
 					lines.append("%s%s: %s" % [pad, safe_key, "{}" if val is Dictionary else "[]"])
@@ -864,8 +908,8 @@ static func dump(data, indent: int = 0) -> String:
 					lines.append(dump(val, indent + 1))
 			else:
 				lines.append("%s%s: %s" % [pad, safe_key, _scalar(val)])
-	elif data is Array:
-		for item in data:
+	elif data_to_dump is Array:
+		for item in data_to_dump:
 			if item is Dictionary or item is Array:
 				if item.is_empty():
 					lines.append("%s- %s" % [pad, "{}" if item is Dictionary else "[]"])

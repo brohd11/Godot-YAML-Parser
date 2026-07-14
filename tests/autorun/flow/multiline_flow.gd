@@ -18,8 +18,15 @@ func run() -> bool:
 	_check(escaped, escaped_exp)
 	_check(single_quoted, single_quoted_exp)
 	_check(empty_flow, empty_flow_exp)
+
+	# The recovery is the point: it parses, and it says so.
 	_check(unterminated, unterminated_exp)
+	_expect(last_warnings.size(), 1, "unterminated flow warns once")
+	var warn = last_warnings[0] if not last_warnings.is_empty() else ""
+	_expect(warn.contains("unterminated flow collection"), true, "unterminated flow warning text")
+
 	_check(stray_bracket, stray_bracket_exp)
+	_expect(last_warnings.is_empty(), true, "a stray bracket in a plain scalar does not warn")
 	_check(block_scalar_guard, block_scalar_guard_exp)
 	_check(trailing_comma, trailing_comma_exp)
 	_check(inline_hash, inline_hash_exp)

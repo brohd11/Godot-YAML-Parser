@@ -17,7 +17,7 @@ static func run() -> Dictionary:
 		"script": "function hello() {\n  print(\"Hello World!\");\n  print(\"Hello World!\");\n}\n"
 	}
 	test_count += 1
-	var result1 = YAMLParser.parse(yaml1)
+	var result1 = YAMLTest.parse_data(yaml1)
 	if result1 == expected1:
 		success_count += 1
 		out.append("Test 1: PASSED - Literal block")
@@ -37,7 +37,7 @@ static func run() -> Dictionary:
 		"description": "This is a long description that will be folded into a single paragraph.\n"
 	}
 	test_count += 1
-	var result2 = YAMLParser.parse(yaml2)
+	var result2 = YAMLTest.parse_data(yaml2)
 	if result2 == expected2:
 		success_count += 1
 		out.append("Test 2: PASSED - Folded block")
@@ -57,7 +57,7 @@ static func run() -> Dictionary:
 		"content": "No trailing newline"
 	}
 	test_count += 1
-	var result3 = YAMLParser.parse(yaml3)
+	var result3 = YAMLTest.parse_data(yaml3)
 	if result3 == expected3:
 		success_count += 1
 		out.append("Test 3: PASSED - Strip chomping")
@@ -77,7 +77,7 @@ static func run() -> Dictionary:
 		"content": "line 1\nline 2\n\n\n\n"
 	}
 	test_count += 1
-	var result4 = YAMLParser.parse(yaml4)
+	var result4 = YAMLTest.parse_data(yaml4)
 	if result4 == expected4:
 		success_count += 1
 		out.append("Test 4: PASSED - Keep chomping")
@@ -97,7 +97,7 @@ static func run() -> Dictionary:
 		"message": "Line 1\nLine 2\tIndented"
 	}
 	test_count += 1
-	var result5 = YAMLParser.parse(yaml5)
+	var result5 = YAMLTest.parse_data(yaml5)
 	if result5 == expected5:
 		success_count += 1
 		out.append("Test 5: PASSED - Quoted string")
