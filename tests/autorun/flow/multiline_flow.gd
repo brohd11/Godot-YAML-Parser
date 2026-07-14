@@ -19,14 +19,19 @@ func run() -> bool:
 	_check(single_quoted, single_quoted_exp)
 	_check(empty_flow, empty_flow_exp)
 
-	# The recovery is the point: it parses, and it says so.
-	_check(unterminated, unterminated_exp)
-	_expect(last_warnings.size(), 1, "unterminated flow warns once")
-	var warn = last_warnings[0] if not last_warnings.is_empty() else ""
-	_expect(warn.contains("unterminated flow collection"), true, "unterminated flow warning text")
+	# An unterminated flow used to be auto-closed with a warning. It is a syntax error: the
+	# document does not say what it looks like it says, and guessing at the missing bracket
+	# is worse than refusing it.
+	var parser = YAMLParser.new()
+	_expect(parser.parse(unterminated), ERR_PARSE_ERROR, "unterminated flow is an error")
+	_expect(parser.data, null, "a failed parse yields no data")
+	_expect(parser.get_error_message().contains("unterminated flow collection"), true,
+			"unterminated flow error text")
+	_expect(parser.get_error_line(), 1, "unterminated flow error line")
 
+	# A plain scalar holding a stray bracket opens nothing, so it is not an error.
 	_check(stray_bracket, stray_bracket_exp)
-	_expect(last_warnings.is_empty(), true, "a stray bracket in a plain scalar does not warn")
+	_expect(last_errors.is_empty(), true, "a stray bracket in a plain scalar is not an error")
 	_check(block_scalar_guard, block_scalar_guard_exp)
 	_check(trailing_comma, trailing_comma_exp)
 	_check(inline_hash, inline_hash_exp)
@@ -178,11 +183,11 @@ b: {
 var empty_flow_exp = {"a": [], "b": {}}
 
 
-# Unterminated at EOF: closed implicitly (emits a push_warning).
+# Unterminated at EOF. The error is reported at the OPENING bracket -- line 1, where the
+# mistake is -- not at the end of the file, where the parser happened to notice.
 var unterminated = """a: [1,
 2
 """
-var unterminated_exp = {"a": [1, 2]}
 
 
 # A plain scalar holding a stray bracket must NOT start consuming lines.
@@ -200,13 +205,15 @@ b: [1]
 var block_scalar_guard_exp = {"a": "[not a flow\n", "b": [1]}
 
 
-# Trailing commas are left spec-strict: the empty segment stays a null element.
+# YAML permits a trailing comma in a flow collection -- the spec uses one in its own
+# examples (7.13, 7.15) -- so the empty segment is punctuation, not a null element. This
+# used to expect [1, 2, null], which matched neither the spec nor any other parser.
 var trailing_comma = """a: [
   1,
   2,
 ]
 """
-var trailing_comma_exp = {"a": [1, 2, null]}
+var trailing_comma_exp = {"a": [1, 2]}
 
 
 # A hash inside a flow that closes on its own line keeps its existing meaning.

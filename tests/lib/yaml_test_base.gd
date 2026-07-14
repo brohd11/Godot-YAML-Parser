@@ -4,11 +4,11 @@ class_name YAMLTest
 var pass_state:= -1
 ## Report lines collected during the run. The runner folds these into its result.
 var output: Array[String] = []
-## Warnings the parser raised during the most recent _check, for tests that assert on them.
-var last_warnings: Array[String] = []
+## Errors the parser raised during the most recent _check, for tests that assert on them.
+var last_errors: Array[String] = []
 
 ## Parse and hand back just the data. For suites that assert on parsed values and
-## have no interest in the Error or the warnings; anything testing the API surface
+## have no interest in the Error itself; anything testing the API surface
 ## itself should drive YAMLParser directly.
 static func parse_data(yaml: String) -> Variant:
 	var parser = YAMLParser.new()
@@ -44,14 +44,16 @@ func _expect(got, expected, what: String = "") -> void:
 
 
 ## Parse `yaml`, compare against `expected`, then assert it survives a dump round-trip.
-## The parser's warnings are drained into the report rather than the engine log.
+## The parser's errors are drained into the report rather than the engine log. `_check` is
+## for YAML that is meant to be VALID, so an error here is a failure in its own right --
+## `data` is null on error, and the comparison below would fail anyway.
 func _check(yaml: String, expected) -> bool:
 	var parser = YAMLParser.new()
 	parser.parse(yaml)
 	var got = parser.data
-	last_warnings = parser.warnings.duplicate()
-	for w in last_warnings:
-		_log("   warn: %s" % w)
+	last_errors = parser.errors.duplicate()
+	for e in last_errors:
+		_log("   error: %s" % e)
 
 	var ok = got == expected
 	if ok:

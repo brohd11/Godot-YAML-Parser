@@ -6,21 +6,39 @@
 ##     python3 tests/yaml_test_suite/gen_suite.py                          # build the corpus
 ##     godot --headless --script res://tests/yaml_test_suite/conformance_test.gd
 ##
-## The suite measures strictness, which is the axis this parser deliberately trades away:
-## parse() never fails, it repairs and warns. So the 94 must-fail cases are reported
-## rather than scored, and the headline number covers the cases with a JSON expectation.
+## Two numbers, because the suite measures two different things. The headline is correctness:
+## of the cases carrying a JSON expectation, how many do we read the same way a conforming
+## parser would? Below it is strictness: of the 94 documents that MUST be rejected, how many
+## do we actually reject? The second is the weaker of the two by design -- the checks in the
+## parser are chosen to never reject a valid document, and that bar costs coverage here.
 
 const SUITE_PATH = "res://tests/yaml_test_suite/suite.json"
 const RESULTS_PATH = "res://tests/yaml_test_suite/results.json"
 
 # Feature probes, in priority order: a case is filed under the first one that matches its
 # input. Heuristics on the raw text, not a parse -- enough to rank the backlog, no more.
+#
+# Ordered most-specific first, so the unsupported node properties claim their cases before
+# the structural probes below them can. Whatever reaches "other" should be genuinely
+# unclassified, which is the point: that is the list worth reading.
 const BUCKETS: Array = [
-	["anchors & aliases", "(^|[\\s\\[{,])[&*][\\w\\-]|<<\\s*:"],
+	# An anchor or alias name is almost any non-space run, so \w is too narrow -- it missed
+	# "&:@*!$" and an emoji anchor, both of which landed in "other" and had to be traced by hand.
+	["anchors & aliases", "(^|[\\s\\[{,])[&*][^\\s,\\]}]|<<\\s*:"],
 	["tags & directives", "(^|\\s)!|^%"],
 	["explicit keys (?)", "^\\s*\\?(\\s|$)"],
-	["tab indentation", "^\\t| \\t"],
+	# A block scalar header: | or > with optional indent/chomp indicators, then a comment
+	# or end of line.
+	["block scalars", "(^|\\s)[|>][0-9+\\-]*[ \\t]*(#.*)?$"],
+	["flow collections", "[\\[{]"],
+	["quoted scalars", "[\"']"],
 ]
+
+# Tab indentation is not guessed at. A regex on the raw text cannot tell an indenting tab
+# from a tab sitting inside block-scalar content, and that mistake filed six cases under
+# "tab indentation" that were really quoted and block scalars. The parser already knows --
+# it says so in `errors` -- so ask it instead.
+const TAB_INDENT_ERROR = "tab used for indentation"
 
 
 static func run() -> Dictionary:
@@ -31,19 +49,29 @@ static func run() -> Dictionary:
 	var passed: Array[String] = []
 	var failed: Array[String] = []
 	var skipped: Array[String] = []
-	# Must-fail cases: the parser cannot reject, so record whether it at least warned.
-	var warned: Array[String] = []
-	var silent: Array[String] = []
+	# Must-fail cases. Now that parse() can actually fail, these are a real score: rejecting
+	# them is a pass, accepting them is a miss.
+	var rejected: Array[String] = []
+	var accepted: Array[String] = []
+
+	# Cases the parser itself reported as tab-indented, which is more reliable than any
+	# pattern we could run over the raw text.
+	var tab_indented := {}
 
 	for case in cases:
 		var parser = YAMLParser.new()
-		parser.parse_all(case["yaml"])
+		var err = parser.parse_all(case["yaml"])
+
+		for e in parser.errors:
+			if e.contains(TAB_INDENT_ERROR):
+				tab_indented[case["id"]] = true
+				break
 
 		if case["fail"]:
-			if parser.warnings.is_empty():
-				silent.append(case["id"])
+			if err != OK:
+				rejected.append(case["id"])
 			else:
-				warned.append(case["id"])
+				accepted.append(case["id"])
 		elif case.has("json"):
 			if _equiv(parser.data, case["json"]):
 				passed.append(case["id"])
@@ -53,7 +81,7 @@ static func run() -> Dictionary:
 			skipped.append(case["id"])
 
 	var scored = passed.size() + failed.size()
-	var by_bucket = _bucket(failed, cases)
+	var by_bucket = _bucket(failed, cases, tab_indented)
 
 	var out: Array[String] = []
 	out.append("YAML Test Suite (yaml/yaml-test-suite, data-2022-01-17)")
@@ -66,14 +94,14 @@ static func run() -> Dictionary:
 		var ids: Array = by_bucket[name]
 		out.append("  %-20s %3d   %s" % [name, ids.size(), _preview(ids)])
 	out.append("")
-	out.append("Must-fail cases: %d (not scored -- parse() cannot fail by design)" % (
-			warned.size() + silent.size()))
-	out.append("  warned            %3d" % warned.size())
-	out.append("  silently accepted %3d   %s" % [silent.size(), _preview(silent)])
+	var must_fail = rejected.size() + accepted.size()
+	out.append("Must-fail cases: %d / %d correctly rejected (%.1f%%)" % [
+			rejected.size(), must_fail, 100.0 * rejected.size() / maxi(must_fail, 1)])
+	out.append("  still accepted    %3d   %s" % [accepted.size(), _preview(accepted)])
 	out.append("")
 	out.append("Skipped: %d (valid, but no JSON expectation in the suite)" % skipped.size())
 
-	_write_results(passed, failed, skipped, warned, silent)
+	_write_results(passed, failed, skipped, rejected, accepted)
 	out.append("Wrote %s" % RESULTS_PATH)
 
 	return {"output": out, "passed": passed, "failed": failed}
@@ -119,7 +147,7 @@ static func _equiv(got, expected) -> bool:
 	return got == expected
 
 
-static func _bucket(failed: Array[String], cases: Array) -> Dictionary:
+static func _bucket(failed: Array[String], cases: Array, tab_indented: Dictionary) -> Dictionary:
 	var yaml_by_id := {}
 	for case in cases:
 		yaml_by_id[case["id"]] = case["yaml"]
@@ -127,9 +155,14 @@ static func _bucket(failed: Array[String], cases: Array) -> Dictionary:
 	var out := {}
 	for entry in BUCKETS:
 		out[entry[0]] = []
+	out["tab indentation"] = []
 	out["other"] = []
 
 	for id in failed:
+		# The parser's own verdict outranks any pattern.
+		if tab_indented.has(id):
+			out["tab indentation"].append(id)
+			continue
 		var text: String = yaml_by_id[id]
 		var placed := false
 		for entry in BUCKETS:
@@ -153,7 +186,7 @@ static func _preview(ids: Array) -> String:
 
 
 static func _write_results(passed: Array[String], failed: Array[String],
-		skipped: Array[String], warned: Array[String], silent: Array[String]) -> void:
+		skipped: Array[String], rejected: Array[String], accepted: Array[String]) -> void:
 	var f = FileAccess.open(RESULTS_PATH, FileAccess.WRITE)
 	if f == null:
 		return
@@ -162,7 +195,7 @@ static func _write_results(passed: Array[String], failed: Array[String],
 		"passed": passed,
 		"failed": failed,
 		"skipped": skipped,
-		"must_fail_warned": warned,
-		"must_fail_silent": silent,
+		"must_fail_rejected": rejected,
+		"must_fail_accepted": accepted,
 	}, "  "))
 	f.close()

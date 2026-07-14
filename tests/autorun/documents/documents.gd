@@ -24,6 +24,14 @@ func run() -> bool:
 	parser.parse_all("# just a comment\n")
 	_expect(parser.data, [], "parse_all comment only")
 
+	# An empty document is still a document. Only the text before a leading marker, or
+	# after a trailing one, is not -- which is the distinction the splitter used to miss,
+	# dropping every empty document in the stream.
+	parser.parse_all("---\n---\n")
+	_expect(parser.data, [null, null], "parse_all two empty documents")
+	parser.parse_all("---\na: 1\n---\n")
+	_expect(parser.data, [{"a": 1}, null], "parse_all trailing empty document")
+
 	# A dash is a list entry only when alone or followed by a space, so "- -" still
 	# nests but "---" does not.
 	parser.parse("- - a\n- b")

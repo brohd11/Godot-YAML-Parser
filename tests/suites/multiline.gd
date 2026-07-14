@@ -53,8 +53,13 @@ static func run() -> Dictionary:
 	var yaml3 = f_tmp.get_as_text()
 	f_tmp.close()
 	
+	# The fixture ends in whitespace-only lines. Those are not empty: the spaces past the
+	# block's indent are content, so strip chomping -- which removes trailing line BREAKS,
+	# not trailing spaces -- leaves them behind. Verified against the reference
+	# implementation (Ruby psych), which returns exactly this. The old expectation of a
+	# bare "No trailing newline" encoded the bug where such lines were erased.
 	var expected3 = {
-		"content": "No trailing newline"
+		"content": "No trailing newline\n\n\n  "
 	}
 	test_count += 1
 	var result3 = YAMLTest.parse_data(yaml3)
