@@ -1,6 +1,6 @@
 extends SceneTree
 
-const TestRun = preload("res://tests/test_run.gd")
+const TestRun = preload("res://tests/main_test.gd")
 
 func _init() -> void:
 	var result = TestRun.run_tests()

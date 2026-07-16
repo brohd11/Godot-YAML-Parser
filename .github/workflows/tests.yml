@@ -50,4 +50,4 @@ jobs:
 
       - name: Run tests
         run: |
-          ./godot --headless --script res://tests/ci_test.gd
+          ./godot --headless --script res://tests/ci_test_run.gd
