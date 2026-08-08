@@ -90,10 +90,57 @@ service:
 - `dump` does not emit anchors; it writes each node out in full.
 
 
+## Tags
+
+A tag (`!Vector2`, `!!str`) is a node property that turns the parsed value into a typed object.
+The node's value is parsed as usual, then a **constructor** for the tag builds the result.
+
+```yaml
+spawn: !Vector2 [100, 250]
+tint:  !Color "ff8800"
+speed: !!str 60          # the string "60", not the int
+```
+
+```gdscript
+var settings = YAMLParser.new()
+settings.parse_file("res://config/level.yaml")
+settings.data.spawn   # Vector2(100, 250)
+```
+
+**Built-in tags** need no setup:
+
+- **Core schema**: `!!str`, `!!int`, `!!float`, `!!bool`, `!!null` (override implicit typing),
+  and `!!seq` / `!!map` (assert a node's shape).
+- **Godot types** — vectors (`!Vector2`/`!Vector2i`/`!Vector3`/`!Vector3i`/`!Vector4`/`!Vector4i`),
+  `!Color` (from `[r,g,b(,a)]` or a hex string like `"ff8800"`), `!Rect2`/`!Rect2i`,
+  `!Quaternion`, `!Plane`, `!AABB`, `!Basis`, `!Transform2D`/`!Transform3D`, `!Projection`,
+  `!StringName`, `!NodePath`, and the packed arrays (`!PackedInt32Array`, `!PackedStringArray`,
+  `!PackedVector2Array`, `!PackedColorArray`, …). Numeric types take a flat `[...]` sequence;
+  matrix and packed-vector types take a sequence of rows.
+
+**Custom tags** — register a `tag -> Callable` before parsing. The Callable receives the parsed
+value and returns the object; a registered entry also overrides a built-in of the same name.
+
+```gdscript
+var p = YAMLParser.new()
+p.tag_constructors = { "!Deg": func(v): return deg_to_rad(v) }
+p.parse("turn: !Deg 90")            # -> { "turn": 1.5708... }
+```
+
+- `tag_constructors` is **configuration, not parse state** — set it once and reuse the parser.
+- An **unknown tag** (not built-in, not registered), or a tag whose value has the wrong shape
+  (`!Vector2 [1]`), is a parse error.
+- Node properties combine: `&anchor !Vector2 [1,2]` (either order) anchors the *constructed*
+  value, so an alias to it yields the same typed object.
+- `dump` does **not** emit tags — this is a one-way (read) conversion; a `Vector2` in a dumped
+  tree would not round-trip.
+
+
 ## Limitations
 
-- No tags (`!!str`, `!Foo`); they pass through as literal strings. Directives (`%YAML`, `%TAG`) are
-  recognised and ignored, so a `%TAG` shorthand resolves to nothing.
+- `%TAG` directive-defined shorthand handles (`!e!type`) and verbatim `!<uri>` tags are not
+  resolved; only the literal `!` (local) and `!!` (core-schema) handles work. Directives
+  (`%YAML`, `%TAG`) are otherwise recognised and ignored.
 - A quote or bracket appearing part way through a plain scalar is treated as if it opened one, so a
   key like `bla"keks` is not read correctly.
 - Errors inside a flow collection (a missing or doubled comma) are not detected. Only the
@@ -122,8 +169,10 @@ godot --headless --script res://tests/yaml_test_suite/conformance_test.gd
 ```
 
 It reports two numbers. 
- - **Correctness:** Currently 236/279 of tests that have a JSON target pass. The fails are mostly tag related, plus a few anchor cases (such as an anchor on a mapping key).
- - **Strictness:** of the 94 documents the suite says must be *rejected*, it rejects **37**. So there is the potential for malformed content to pass by undetected.
+ - **Correctness:** Currently 246/279 of tests that have a JSON target pass. The fails are mostly
+   directive/`%TAG`-shorthand cases and a few exotic node-property placements (such as an anchor
+   on a mapping key).
+ - **Strictness:** of the 94 documents the suite says must be *rejected*, it rejects **39**. So there is the potential for malformed content to pass by undetected.
 
 ## Origin
 

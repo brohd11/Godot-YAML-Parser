@@ -167,6 +167,14 @@ var _origin := 0
 ## cleared in _parse_text, not just in _reset (parse_all reuses one parser for every doc).
 var _anchors: Dictionary = {}
 
+## Tag constructors the caller registers: tag string (with its leading "!", e.g. "!Vector2")
+## -> a Callable taking the parsed underlying value and returning the constructed object. This
+## is CONFIGURATION, not parse state -- it is deliberately NOT cleared in _reset, so a caller
+## registers once and reuses the parser. A user entry overrides a built-in of the same name.
+## See _apply_tag for the built-in core-schema ("!!str", ...) and Godot-type ("!Vector2", ...)
+## tags that need no registration.
+var tag_constructors: Dictionary = {}
+
 
 ## The reason the last call failed, or "" if it succeeded.
 func get_error_message() -> String:
@@ -392,32 +400,38 @@ func _parse_block(cur: _Cursor, indent: int) -> Variant:
 	if _is_alias(content0):
 		cur.i = j + 1
 		return _resolve_alias(content0.substr(1), _line(j))
-	# An anchor ("&name") names the block that follows it. The node may ride on this same line
-	# ("&a value", "--- &a [1, 2]") or sit on the lines below a bare "&a"; the two are told
-	# apart by whether anything remains after the name.
-	if content0.begins_with("&"):
-		var an = _strip_anchor(content0)
-		if an[0] == "":
+	# A node property -- an anchor ("&name") and/or a tag ("!name") -- introduces the block that
+	# follows it. The node may ride on this same line ("&a value", "--- !Vector2 [1, 2]") or sit
+	# on the lines below a bare property; the two are told apart by whether anything remains.
+	if content0.begins_with("&") or content0.begins_with("!"):
+		var props = _strip_props(content0)
+		var anchor = props[0]
+		var tag = props[1]
+		var rem = props[2]
+		if anchor == "" and tag == "":
+			# Only reachable via a bare "&" with no name (a "!" always yields at least "!").
 			_error(_line(j), "anchor name expected after '&'")
-		elif an[1].is_empty():
-			# Bare "&a": its node is the block on the following lines. Grab it only when there
-			# is one at this indent or deeper -- a "--- &a" over a column-0 mapping, or a nested
-			# "&a" over its own deeper block. A shallower next line is a sibling, so "&a" is null.
-			cur.i = j + 1
-			var nj = cur.peek()
-			var v = null
-			if nj != -1 and _get_indent_level(cur.line_at(nj)) >= indent:
-				v = _parse_block(cur, _get_indent_level(cur.line_at(nj)))
-			_anchors[an[0]] = v
-			return v
 		else:
-			# Rewrite this line without its anchor and re-dispatch, so the map/list/scalar/flow
-			# discrimination below runs on the bare node. Mutating cur.lines in place is the same
-			# synthetic-line technique _parse_explicit_node and _parse_nested_dash_list use.
-			cur.lines[j] = " ".repeat(indent) + an[1]
-			var av = _parse_block(cur, indent)
-			_anchors[an[0]] = av
-			return av
+			var v = null
+			if rem.is_empty():
+				# Bare property: its node is the block on the following lines. Grab it only when
+				# there is one at this indent or deeper -- a "--- &a" over a column-0 mapping, or a
+				# nested property over its own deeper block. A shallower next line is a sibling.
+				cur.i = j + 1
+				var nj = cur.peek()
+				if nj != -1 and _get_indent_level(cur.line_at(nj)) >= indent:
+					v = _parse_block(cur, _get_indent_level(cur.line_at(nj)))
+			else:
+				# Rewrite this line without its properties and re-dispatch, so the map/list/
+				# scalar/flow discrimination below runs on the bare node. Mutating cur.lines in
+				# place is the same synthetic-line technique _parse_explicit_node uses.
+				cur.lines[j] = " ".repeat(indent) + rem
+				v = _parse_block(cur, indent)
+			# The tag constructs the value; the anchor then labels that complete node.
+			v = _apply_tag(tag, v, _line(j))
+			if anchor != "":
+				_anchors[anchor] = v
+			return v
 	# A block may itself be a flow collection. This one branch covers the document
 	# root ("[1, 2]" as the whole file), a flow on the line after a bare "key:",
 	# a flow after an empty dash, and the synthetic sub-document of a "- - [" item.
@@ -498,21 +512,25 @@ func _parse_plain_scalar(cur: _Cursor, first: String, indent: int) -> Variant:
 
 
 # Parse the value written after a "key:" -- an inline scalar or flow, a block-scalar header,
-# or a nested block on the following lines -- resolving a leading anchor ("&a value") or a
-# node that is a lone alias ("*a"). `indent` is the key's own column, from which block scalars
-# and nested blocks are measured. Shared by _parse_map and _merge_item_keys.
+# or a nested block on the following lines -- resolving node properties ("key: &a !T value") or
+# a value that is a lone alias ("*a"). `indent` is the key's own column, from which block
+# scalars and nested blocks are measured. Shared by _parse_map and _merge_item_keys.
 func _parse_key_value(cur: _Cursor, value_str, indent: int) -> Variant:
 	if value_str == null:
 		return _parse_value_after_key(cur, indent)
-	var an = _strip_anchor(value_str)
-	if an[0] != "":
-		# "key: &a ..." -- the remainder is the anchored node; empty means it is on the
-		# following lines, the same as a bare "key:".
-		var node = _parse_key_value(cur, null if an[1].is_empty() else an[1], indent)
-		_anchors[an[0]] = node
-		return node
 	if _is_alias(value_str):
 		return _resolve_alias(value_str.substr(1), _line(cur.i - 1))
+	if value_str.begins_with("&") or value_str.begins_with("!"):
+		var props = _strip_props(value_str)
+		# A bare "&" (both empty) is left to _parse_value below, which reports it.
+		if props[0] != "" or props[1] != "":
+			# "key: &a !T ..." -- the remainder is the node; empty means it is on the following
+			# lines, the same as a bare "key:". Tag constructs, anchor then labels the result.
+			var node = _parse_key_value(cur, null if props[2].is_empty() else props[2], indent)
+			node = _apply_tag(props[1], node, _line(cur.i - 1))
+			if props[0] != "":
+				_anchors[props[0]] = node
+			return node
 	if _is_block_header(value_str):
 		return _consume_block_scalar(cur, value_str, indent)
 	return _parse_scalar_or_quoted(cur, value_str, indent)
@@ -666,17 +684,19 @@ func _parse_list(cur: _Cursor, indent: int) -> Array:
 		var item_text = after_trimmed.strip_edges()
 		cur.i = j + 1
 
-		# "- &a ..." anchors the item. Strip the anchor off the item text, parse the rest as
-		# usual, and register the result under the name. An empty rest ("- &a" with the node on
-		# the lines below) is left for the empty-dash path, same as a bare dash.
-		var anchor_name = ""
-		var an = _strip_anchor(item_text)
-		if an[0] != "":
-			anchor_name = an[0]
-			item_text = an[1]
+		# "- &a !T ..." carries node properties on the item. Strip them off the item text; the
+		# tag constructs the item's value and the anchor labels it, both applied once it is
+		# parsed. An empty rest ("- &a" with the node on the lines below) falls to the empty-dash
+		# path. A bare "&" leaves item_text unchanged (props both "") for the scalar path to flag.
+		var props = _strip_props(item_text)
+		var anchor_name = props[0]
+		var item_tag = props[1]
+		var has_props = anchor_name != "" or item_tag != ""
+		if has_props:
+			item_text = props[2]
 
 		var item_value = null
-		# Empty dash (or a bare "- &a"): value lives on the following deeper lines.
+		# Empty dash (or a bare "- &a"/"- !T"): value lives on the following deeper lines.
 		if item_text.is_empty():
 			var nj = cur.peek()
 			if nj != -1 and _get_indent_level(cur.line_at(nj)) > indent:
@@ -686,9 +706,9 @@ func _parse_list(cur: _Cursor, indent: int) -> Array:
 		# "- *a" (or "- &a *b") is an alias item: resolve it to the anchored node.
 		elif _is_alias(item_text):
 			item_value = _resolve_alias(item_text.substr(1), _line(j))
-		# Nested list: "- - x" means this item is itself a list. (Not reached for an anchored
-		# item -- "- &a - x" is vanishingly rare and left to the scalar/map path.)
-		elif anchor_name == "" and after_trimmed.begins_with("-"):
+		# Nested list: "- - x" means this item is itself a list. (Not reached for a property-
+		# carrying item -- "- &a - x" is vanishingly rare and left to the scalar/map path.)
+		elif not has_props and after_trimmed.begins_with("-"):
 			item_value = _parse_nested_dash_list(cur, j, item_indent, indent)
 		# "- |" is a block scalar, not the plain scalar "|". A bare header holds no colon,
 		# so _split_key_value sees nothing and the plain-scalar branch below would fold the
@@ -707,6 +727,8 @@ func _parse_list(cur: _Cursor, indent: int) -> Array:
 				# Map item: first pair is inline, remaining keys sit at item_indent.
 				item_value = _parse_list_map_item(cur, kv, item_indent, indent)
 
+		# The tag constructs the item; the anchor then labels the complete node.
+		item_value = _apply_tag(item_tag, item_value, _line(j))
 		if anchor_name != "":
 			_anchors[anchor_name] = item_value
 		result.append(item_value)
@@ -731,8 +753,8 @@ func _parse_list_map_item(cur: _Cursor, kv: Array, item_indent: int, indent: int
 
 # The value of a list item's first inline pair. Its null case is special: the nested block has
 # to beat BOTH the item column and the dash's own indent, which _parse_value_after_key does not
-# express -- so it is spelled out here. Otherwise it mirrors _parse_key_value (anchor, alias,
-# block scalar, scalar), all measured from item_indent.
+# express -- so it is spelled out here. Otherwise it mirrors _parse_key_value (properties,
+# alias, block scalar, scalar), all measured from item_indent.
 func _parse_list_item_value(cur: _Cursor, v, item_indent: int, indent: int) -> Variant:
 	if v == null:
 		var nj = cur.peek()
@@ -740,13 +762,17 @@ func _parse_list_item_value(cur: _Cursor, v, item_indent: int, indent: int) -> V
 				and _get_indent_level(cur.line_at(nj)) > indent:
 			return _parse_block(cur, _get_indent_level(cur.line_at(nj)))
 		return null
-	var an = _strip_anchor(v)
-	if an[0] != "":
-		var node = _parse_list_item_value(cur, null if an[1].is_empty() else an[1], item_indent, indent)
-		_anchors[an[0]] = node
-		return node
 	if _is_alias(v):
 		return _resolve_alias(v.substr(1), _line(cur.i - 1))
+	if v.begins_with("&") or v.begins_with("!"):
+		var props = _strip_props(v)
+		if props[0] != "" or props[1] != "":
+			var node = _parse_list_item_value(cur, null if props[2].is_empty() else props[2],
+					item_indent, indent)
+			node = _apply_tag(props[1], node, _line(cur.i - 1))
+			if props[0] != "":
+				_anchors[props[0]] = node
+			return node
 	if _is_block_header(v):
 		return _consume_block_scalar(cur, v, item_indent)
 	return _parse_scalar_or_quoted(cur, v, item_indent)
@@ -1072,24 +1098,26 @@ static func _parse_flow_entry(item: String, p = null, line: int = -1) -> Variant
 
 
 # Convert a string token to the appropriate Godot type. `p` is the parser instance, passed only
-# from the parse path; on the dump path it is null and anchors/aliases are not meaningful, so the
-# behaviour is exactly as before. `line` is used only to place an anchor/alias error.
+# from the parse path; on the dump path it is null and node properties are not meaningful, so the
+# behaviour is exactly as before. `line` is used only to place a property/tag error.
 static func _parse_value(s: String, p = null, line: int = -1) -> Variant:
 	s = s.strip_edges()
 	if s.is_empty(): return null
 
-	# A flow entry may be an alias ("*a") or carry an anchor ("&a 1"). Resolved before type
-	# detection, so "&a 1" types as the int 1 rather than the string "&a 1".
+	# A flow entry may be an alias ("*a") or carry properties ("&a 1", "!Vector2 [1, 2]").
+	# Resolved before type detection, so "&a 1" types as the int 1, not the string "&a 1".
 	if p != null:
 		if _is_alias(s):
 			return p._resolve_alias(s.substr(1), line)
-		if s.begins_with("&"):
-			var an = _strip_anchor(s)
-			if an[0] == "":
+		if s.begins_with("&") or s.begins_with("!"):
+			var props = _strip_props(s)
+			if props[0] == "" and props[1] == "":
 				p._error(line, "anchor name expected after '&'")
 			else:
-				var node = _parse_value(an[1], p, line)
-				p._anchors[an[0]] = node
+				var node = _parse_value(props[2], p, line)
+				node = p._apply_tag(props[1], node, line)
+				if props[0] != "":
+					p._anchors[props[0]] = node
 				return node
 
 	# YAML 1.2 core schema accepts any case for these. `yes`/`no`/`on`/`off` are
@@ -1283,45 +1311,61 @@ static func _unquote_key(k: String) -> String:
 
 
 # ---------------------------------------------------------------------------
-# Anchors (&name), aliases (*name) and merge keys (<<).
+# Node properties: anchors (&name), tags (!tag), aliases (*name), and merge keys (<<).
 #
-# There is no node type to hang an anchor on -- the parser builds native Godot values
-# directly -- so an anchor is registered by capturing the RETURN value of the sub-parse
-# at each call site, keyed in `_anchors`. An alias is resolved by handing that same object
-# back: aliases share their anchor's node rather than copying it, which is YAML's own node
-# identity. Because an anchor is only registered AFTER its node has finished parsing, a
-# self-referential alias ("&a [*a]") sees `a` still undefined and fails as an unknown alias
-# rather than building a cycle -- so a shared reference can never form an infinite structure.
+# There is no node type to hang a property on -- the parser builds native Godot values
+# directly -- so at each call site the node's VALUE is parsed first, then its properties are
+# applied to the return value: a tag CONSTRUCTS (see _apply_tag), an anchor REGISTERS the
+# result in `_anchors`, an alias hands a registered node back. Anchor and tag may appear in
+# either order and both at once ("&v !Vector2 [1,2]"); the tag is applied before the anchor
+# is registered, because the anchor labels the complete (constructed) node.
 #
-# Detection is on the RAW leading character. "&" and "*" are indicators only when they open
-# an unquoted node, so a quoted value like "\"&x *y\"" is an ordinary string and passes
+# Aliases share their anchor's node rather than copying it -- YAML's own node identity. Since
+# an anchor is only registered AFTER its node finishes parsing, a self-referential alias
+# ("&a [*a]") sees `a` still undefined and fails as unknown rather than building a cycle, so a
+# shared reference can never form an infinite structure.
+#
+# Detection is on the RAW leading character. "&", "!" and "*" are indicators only when they
+# open an unquoted node, so a quoted value like "\"!x &y\"" is an ordinary string and passes
 # through untouched -- which is what keeps such strings round-tripping through dump().
 # ---------------------------------------------------------------------------
 
-# A character that ends an anchor or alias name: whitespace, or a flow indicator. Reading up
+# A character that ends an anchor/alias/tag name: whitespace, or a flow indicator. Reading up
 # to it is what makes "&a" correct both on its own line and packed into a flow ("[&a 1, *a]").
 static func _is_name_end(c: String) -> bool:
 	return c == " " or c == "\t" or c == "," or c == "[" or c == "]" or c == "{" or c == "}"
 
 
-# The anchor name in a leading "&name", or "".
-static func _anchor_name(content: String) -> String:
-	if not content.begins_with("&"):
-		return ""
-	var i = 1
-	while i < content.length() and not _is_name_end(content[i]):
+# The run of name characters in `s` starting at `start`, up to the first name-end (or the end).
+static func _read_token(s: String, start: int) -> String:
+	var i = start
+	while i < s.length() and not _is_name_end(s[i]):
 		i += 1
-	return content.substr(1, i - 1)
+	return s.substr(start, i - start)
 
 
-# Split a leading "&name" off `content`. Returns [name, remaining], with `remaining`
-# left-stripped of the spaces/tabs between the anchor and its node. [ "", content ] when
-# there is no anchor. An empty name ("&" alone, or "& x") is left for the caller to report.
-static func _strip_anchor(content: String) -> Array:
-	var name = _anchor_name(content)
-	if name == "":
-		return ["", content]
-	return [name, content.substr(1 + name.length()).lstrip(" \t")]
+# Pull leading node properties -- one "&anchor" and one "!tag", in any order -- off `content`.
+# Returns [anchor, tag, remaining]. `tag` keeps its leading "!"(s) so "!!str" and "!Vector2"
+# are distinct keys; `remaining` is left-stripped of the whitespace before the node. A bare
+# "&" (no name) is NOT consumed -- it stays in `remaining` so the caller reports it -- which is
+# why both anchor and tag come back "" only when the leading "&" had no name.
+static func _strip_props(content: String) -> Array:
+	var anchor := ""
+	var tag := ""
+	var s := content
+	while true:
+		if anchor == "" and s.begins_with("&"):
+			var name = _read_token(s, 1)
+			if name == "":
+				break            # bare "&": leave it for the caller to flag
+			anchor = name
+			s = s.substr(1 + name.length()).lstrip(" \t")
+		elif tag == "" and s.begins_with("!"):
+			tag = _read_token(s, 0)   # includes the leading "!"; at least "!" itself
+			s = s.substr(tag.length()).lstrip(" \t")
+		else:
+			break
+	return [anchor, tag, s]
 
 
 # True when `content` is a node consisting SOLELY of an alias "*name": a leading unquoted "*",
@@ -1369,6 +1413,204 @@ func _apply_merges(target: Dictionary, merges: Array) -> void:
 		for k in m:
 			if not target.has(k):
 				target[k] = m[k]
+
+
+# ---------------------------------------------------------------------------
+# Tags (!tag) -- construct a typed value from a parsed node.
+#
+# A tag is applied to the node's already-parsed VALUE. Resolution order: a caller-registered
+# `tag_constructors` entry first (so an app can override anything), then the built-in core
+# YAML schema ("!!str", ...) and Godot Variant types ("!Vector2", "!Color", ...), else an
+# unknown-tag error. Godot types with no meaningful config form (RID, Object, Callable,
+# Signal) are intentionally absent. Constructors validate their input and report shape errors
+# through the ordinary _error channel, so a malformed "!Vector2 [1]" nulls `data` like any
+# other parse failure. `dump` does not emit tags, so this is a one-way (read) conversion.
+# ---------------------------------------------------------------------------
+func _apply_tag(tag: String, value, line: int) -> Variant:
+	if tag == "":
+		return value
+	if tag_constructors.has(tag):
+		return tag_constructors[tag].call(value)
+	match tag:
+		# Core YAML 1.2 schema: force a scalar's type, or assert a collection's shape.
+		"!!str": return str(value)
+		"!!int": return _as_int(value, line)
+		"!!float": return _as_float(value, line)
+		"!!bool": return _as_bool(value, line)
+		"!!null": return null
+		"!!seq": return value if value is Array else _tag_fail(tag, "a sequence", line)
+		"!!map": return value if value is Dictionary else _tag_fail(tag, "a mapping", line)
+
+		# Vectors -- a flat sequence of numbers.
+		"!Vector2":
+			var a = _nums(value, 2, tag, line); return Vector2(a[0], a[1]) if a != null else null
+		"!Vector2i":
+			var a = _nums(value, 2, tag, line); return Vector2i(a[0], a[1]) if a != null else null
+		"!Vector3":
+			var a = _nums(value, 3, tag, line); return Vector3(a[0], a[1], a[2]) if a != null else null
+		"!Vector3i":
+			var a = _nums(value, 3, tag, line); return Vector3i(a[0], a[1], a[2]) if a != null else null
+		"!Vector4":
+			var a = _nums(value, 4, tag, line); return Vector4(a[0], a[1], a[2], a[3]) if a != null else null
+		"!Vector4i":
+			var a = _nums(value, 4, tag, line); return Vector4i(a[0], a[1], a[2], a[3]) if a != null else null
+
+		# Rects and other math types.
+		"!Rect2":
+			var a = _nums(value, 4, tag, line); return Rect2(a[0], a[1], a[2], a[3]) if a != null else null
+		"!Rect2i":
+			var a = _nums(value, 4, tag, line); return Rect2i(a[0], a[1], a[2], a[3]) if a != null else null
+		"!Quaternion":
+			var a = _nums(value, 4, tag, line); return Quaternion(a[0], a[1], a[2], a[3]) if a != null else null
+		"!Plane":
+			var a = _nums(value, 4, tag, line); return Plane(a[0], a[1], a[2], a[3]) if a != null else null
+		"!AABB":
+			var a = _nums(value, 6, tag, line)
+			return AABB(Vector3(a[0], a[1], a[2]), Vector3(a[3], a[4], a[5])) if a != null else null
+		"!Color": return _color(value, line)
+
+		# String-backed types.
+		"!StringName": return StringName(str(value))
+		"!NodePath": return NodePath(str(value))
+
+		# Matrix/transform types -- a sequence of rows, each a vector.
+		"!Basis":
+			var r = _rows(value, 3, 3, tag, line)
+			return Basis(_v3(r[0]), _v3(r[1]), _v3(r[2])) if r != null else null
+		"!Transform2D":
+			var r = _rows(value, 3, 2, tag, line)
+			return Transform2D(_v2(r[0]), _v2(r[1]), _v2(r[2])) if r != null else null
+		"!Transform3D":
+			var r = _rows(value, 4, 3, tag, line)
+			return Transform3D(_v3(r[0]), _v3(r[1]), _v3(r[2]), _v3(r[3])) if r != null else null
+		"!Projection":
+			var r = _rows(value, 4, 4, tag, line)
+			return Projection(_v4(r[0]), _v4(r[1]), _v4(r[2]), _v4(r[3])) if r != null else null
+
+		# Packed arrays of scalars -- the parsed Array feeds the constructor directly.
+		"!PackedByteArray":
+			var a = _seq(value, tag, line); return PackedByteArray(a) if a != null else null
+		"!PackedInt32Array":
+			var a = _seq(value, tag, line); return PackedInt32Array(a) if a != null else null
+		"!PackedInt64Array":
+			var a = _seq(value, tag, line); return PackedInt64Array(a) if a != null else null
+		"!PackedFloat32Array":
+			var a = _seq(value, tag, line); return PackedFloat32Array(a) if a != null else null
+		"!PackedFloat64Array":
+			var a = _seq(value, tag, line); return PackedFloat64Array(a) if a != null else null
+		"!PackedStringArray":
+			var a = _seq(value, tag, line); return PackedStringArray(a) if a != null else null
+
+		# Packed arrays of vectors/colors -- each element is itself a sequence.
+		"!PackedVector2Array":
+			var r = _rows(value, -1, 2, tag, line)
+			if r == null: return null
+			var out = PackedVector2Array()
+			for row in r: out.append(_v2(row))
+			return out
+		"!PackedVector3Array":
+			var r = _rows(value, -1, 3, tag, line)
+			if r == null: return null
+			var out = PackedVector3Array()
+			for row in r: out.append(_v3(row))
+			return out
+		"!PackedVector4Array":
+			var r = _rows(value, -1, 4, tag, line)
+			if r == null: return null
+			var out = PackedVector4Array()
+			for row in r: out.append(_v4(row))
+			return out
+		"!PackedColorArray":
+			if not (value is Array): return _tag_fail(tag, "a sequence", line)
+			var out = PackedColorArray()
+			for e in value:
+				var c = _color(e, line)
+				if c == null: return null
+				out.append(c)
+			return out
+
+	_error(line, "unknown tag '%s'" % tag)
+	return null
+
+
+# Report a tag whose value has the wrong shape, and hand back null so the caller returns it.
+func _tag_fail(tag: String, expected: String, line: int) -> Variant:
+	_error(line, "tag '%s' expects %s" % [tag, expected])
+	return null
+
+
+# An Array of exactly `n` numbers, or null (with an error) if the value is not that.
+func _nums(value, n: int, tag: String, line: int) -> Variant:
+	if value is Array and value.size() == n:
+		for e in value:
+			if not (e is int or e is float):
+				return _tag_fail(tag, "a sequence of %d numbers" % n, line)
+		return value
+	return _tag_fail(tag, "a sequence of %d numbers" % n, line)
+
+
+# A sequence of `rows` rows (or any number when `rows` is -1), each an Array of `cols` numbers.
+# Returns the outer Array (elements are the validated number-arrays), or null on any mismatch.
+func _rows(value, rows: int, cols: int, tag: String, line: int) -> Variant:
+	if not (value is Array) or (rows != -1 and value.size() != rows):
+		var shape = "a sequence of %d rows of %d numbers" % [rows, cols] if rows != -1 \
+				else "a sequence of rows of %d numbers" % cols
+		return _tag_fail(tag, shape, line)
+	for row in value:
+		if _nums(row, cols, tag, line) == null:
+			return null
+	return value
+
+
+# A plain sequence (any elements), or null with an error.
+func _seq(value, tag: String, line: int) -> Variant:
+	return value if value is Array else _tag_fail(tag, "a sequence", line)
+
+
+# Build a Color from a hex string ("ff0000", "#rrggbbaa") or a 3-or-4 number sequence.
+func _color(value, line: int) -> Variant:
+	if value is String:
+		return Color(value)
+	if value is Array and (value.size() == 3 or value.size() == 4):
+		for e in value:
+			if not (e is int or e is float):
+				return _tag_fail("!Color", "numbers or a hex string", line)
+		if value.size() == 3:
+			return Color(value[0], value[1], value[2])
+		return Color(value[0], value[1], value[2], value[3])
+	return _tag_fail("!Color", "numbers or a hex string", line)
+
+
+# Small vector builders for the row-based matrix/packed constructors above. Each row has
+# already been validated by _rows to be an Array of the right length of numbers.
+func _v2(r: Array) -> Vector2: return Vector2(r[0], r[1])
+func _v3(r: Array) -> Vector3: return Vector3(r[0], r[1], r[2])
+func _v4(r: Array) -> Vector4: return Vector4(r[0], r[1], r[2], r[3])
+
+
+# Coerce a scalar to the type a "!!int"/"!!float"/"!!bool" tag names, or error.
+func _as_int(value, line: int) -> Variant:
+	if value is int: return value
+	if value is float: return int(value)
+	if value is bool: return 1 if value else 0
+	if value is String and value.strip_edges().is_valid_int(): return value.strip_edges().to_int()
+	return _tag_fail("!!int", "an integer", line)
+
+
+func _as_float(value, line: int) -> Variant:
+	if value is float: return value
+	if value is int: return float(value)
+	if value is String and value.strip_edges().is_valid_float(): return value.strip_edges().to_float()
+	return _tag_fail("!!float", "a float", line)
+
+
+func _as_bool(value, line: int) -> Variant:
+	if value is bool: return value
+	if value is String:
+		var l = value.strip_edges().to_lower()
+		if l == "true": return true
+		if l == "false": return false
+	return _tag_fail("!!bool", "a boolean", line)
 
 
 # Split "key: value" on the first top-level ": " (or trailing ":").
