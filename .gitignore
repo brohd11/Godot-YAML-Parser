@@ -6,6 +6,7 @@
 ignore/
 
 namespace/
+aliases/
 
 # Every sibling addon is a dev-environment dependency (see addon_manifest.yml) except
 # the library this repo actually ships. A negation cannot re-include a path whose parent
