@@ -162,6 +162,10 @@ var _err_line := -1
 ## Line in the ORIGINAL text that the document being parsed starts on. Documents are
 ## split before they are parsed, so a cursor index alone cannot name a line in the file.
 var _origin := 0
+## Anchors defined in the document being parsed: name -> the node it was attached to.
+## Scoped to ONE document -- anchors do not carry across a "---" boundary -- so it is
+## cleared in _parse_text, not just in _reset (parse_all reuses one parser for every doc).
+var _anchors: Dictionary = {}
 
 
 ## The reason the last call failed, or "" if it succeeded.
@@ -239,6 +243,7 @@ func _reset() -> void:
 	_err_msg = ""
 	_err_line = -1
 	_origin = 0
+	_anchors.clear()
 
 
 # Record a failure and hand back its code, so a caller can `return _fail(...)`.
@@ -265,6 +270,10 @@ func _read_file(path: String) -> Variant:
 
 func _parse_text(text: String, origin: int) -> Variant:
 	_origin = origin
+	# Anchors are scoped to a single document. parse_all reuses one parser across every
+	# "---" chunk without an intervening _reset(), so the registry is cleared HERE, per
+	# document, or a "&a" in one document would resolve a "*a" in the next.
+	_anchors.clear()
 	var cur = _Cursor.new(text)
 	var j = cur.peek()
 	if j == -1:
@@ -379,6 +388,36 @@ func _parse_block(cur: _Cursor, indent: int) -> Variant:
 	if _get_indent_level(line0) != indent:
 		return null
 	var content0 = _strip_inline_comment(line0.substr(indent))
+	# An alias standing alone ("*name", "--- *name") is the whole block: hand back its node.
+	if _is_alias(content0):
+		cur.i = j + 1
+		return _resolve_alias(content0.substr(1), _line(j))
+	# An anchor ("&name") names the block that follows it. The node may ride on this same line
+	# ("&a value", "--- &a [1, 2]") or sit on the lines below a bare "&a"; the two are told
+	# apart by whether anything remains after the name.
+	if content0.begins_with("&"):
+		var an = _strip_anchor(content0)
+		if an[0] == "":
+			_error(_line(j), "anchor name expected after '&'")
+		elif an[1].is_empty():
+			# Bare "&a": its node is the block on the following lines. Grab it only when there
+			# is one at this indent or deeper -- a "--- &a" over a column-0 mapping, or a nested
+			# "&a" over its own deeper block. A shallower next line is a sibling, so "&a" is null.
+			cur.i = j + 1
+			var nj = cur.peek()
+			var v = null
+			if nj != -1 and _get_indent_level(cur.line_at(nj)) >= indent:
+				v = _parse_block(cur, _get_indent_level(cur.line_at(nj)))
+			_anchors[an[0]] = v
+			return v
+		else:
+			# Rewrite this line without its anchor and re-dispatch, so the map/list/scalar/flow
+			# discrimination below runs on the bare node. Mutating cur.lines in place is the same
+			# synthetic-line technique _parse_explicit_node and _parse_nested_dash_list use.
+			cur.lines[j] = " ".repeat(indent) + an[1]
+			var av = _parse_block(cur, indent)
+			_anchors[an[0]] = av
+			return av
 	# A block may itself be a flow collection. This one branch covers the document
 	# root ("[1, 2]" as the whole file), a flow on the line after a bare "key:",
 	# a flow after an empty dash, and the synthetic sub-document of a "- - [" item.
@@ -454,12 +493,35 @@ func _fold_plain(cur: _Cursor, first: String, indent: int, deeper_only: bool) ->
 # folder as well, or its breaks get folded twice.
 func _parse_plain_scalar(cur: _Cursor, first: String, indent: int) -> Variant:
 	if first.begins_with('"') or first.begins_with("'"):
-		return _parse_value(_complete_quoted(cur, first))
-	return _parse_value(_fold_plain(cur, first, indent, false))
+		return _parse_value(_complete_quoted(cur, first), self, _line(cur.i - 1))
+	return _parse_value(_fold_plain(cur, first, indent, false), self, _line(cur.i - 1))
+
+
+# Parse the value written after a "key:" -- an inline scalar or flow, a block-scalar header,
+# or a nested block on the following lines -- resolving a leading anchor ("&a value") or a
+# node that is a lone alias ("*a"). `indent` is the key's own column, from which block scalars
+# and nested blocks are measured. Shared by _parse_map and _merge_item_keys.
+func _parse_key_value(cur: _Cursor, value_str, indent: int) -> Variant:
+	if value_str == null:
+		return _parse_value_after_key(cur, indent)
+	var an = _strip_anchor(value_str)
+	if an[0] != "":
+		# "key: &a ..." -- the remainder is the anchored node; empty means it is on the
+		# following lines, the same as a bare "key:".
+		var node = _parse_key_value(cur, null if an[1].is_empty() else an[1], indent)
+		_anchors[an[0]] = node
+		return node
+	if _is_alias(value_str):
+		return _resolve_alias(value_str.substr(1), _line(cur.i - 1))
+	if _is_block_header(value_str):
+		return _consume_block_scalar(cur, value_str, indent)
+	return _parse_scalar_or_quoted(cur, value_str, indent)
 
 
 func _parse_map(cur: _Cursor, indent: int) -> Dictionary:
 	var result = {}
+	# Mappings pulled in by "<<" merge keys, folded into `result` once it is fully built.
+	var merges: Array = []
 	while true:
 		var j = cur.peek()
 		if j == -1:
@@ -488,10 +550,18 @@ func _parse_map(cur: _Cursor, indent: int) -> Dictionary:
 			continue
 
 		var kv = _split_key_value(content)
-		var key = _unquote_key(kv[0])
 		var value_str = kv[1]
 		cur.i = j + 1
 
+		# A "<<" key merges other mappings into this one. Gather its source(s) now and fold
+		# them in after the map is built (see _apply_merges), so a key written here explicitly
+		# always wins over a merged one, whichever came first. A quoted "<<" is an ordinary
+		# key, so the RAW token is tested -- _unquote_key would strip the quotes off it.
+		if kv[2] and kv[0].strip_edges() == "<<":
+			_collect_merge_sources(_parse_key_value(cur, value_str, indent), _line(j), merges)
+			continue
+
+		var key = _unquote_key(kv[0])
 		# Every line of a mapping has to BE an entry. With no separator this is not one --
 		# a key whose colon was forgotten -- and it used to become a key with a null value.
 		if not kv[2]:
@@ -501,12 +571,8 @@ func _parse_map(cur: _Cursor, indent: int) -> Dictionary:
 		if result.has(key):
 			_error(_line(j), "duplicate key '%s'" % key)
 
-		if value_str == null:
-			result[key] = _parse_value_after_key(cur, indent)
-		elif value_str != null and _is_block_header(value_str):
-			result[key] = _consume_block_scalar(cur, value_str, indent)
-		else:
-			result[key] = _parse_scalar_or_quoted(cur, value_str, indent)
+		result[key] = _parse_key_value(cur, value_str, indent)
+	_apply_merges(result, merges)
 	return result
 
 
@@ -600,65 +666,96 @@ func _parse_list(cur: _Cursor, indent: int) -> Array:
 		var item_text = after_trimmed.strip_edges()
 		cur.i = j + 1
 
-		# Empty dash: value lives on the following deeper lines.
+		# "- &a ..." anchors the item. Strip the anchor off the item text, parse the rest as
+		# usual, and register the result under the name. An empty rest ("- &a" with the node on
+		# the lines below) is left for the empty-dash path, same as a bare dash.
+		var anchor_name = ""
+		var an = _strip_anchor(item_text)
+		if an[0] != "":
+			anchor_name = an[0]
+			item_text = an[1]
+
+		var item_value = null
+		# Empty dash (or a bare "- &a"): value lives on the following deeper lines.
 		if item_text.is_empty():
 			var nj = cur.peek()
 			if nj != -1 and _get_indent_level(cur.line_at(nj)) > indent:
-				result.append(_parse_block(cur, _get_indent_level(cur.line_at(nj))))
+				item_value = _parse_block(cur, _get_indent_level(cur.line_at(nj)))
 			else:
-				result.append(null)
-			continue
-
-		# Nested list: "- - x" means this item is itself a list.
-		if after_trimmed.begins_with("-"):
-			result.append(_parse_nested_dash_list(cur, j, item_indent, indent))
-			continue
-
+				item_value = null
+		# "- *a" (or "- &a *b") is an alias item: resolve it to the anchored node.
+		elif _is_alias(item_text):
+			item_value = _resolve_alias(item_text.substr(1), _line(j))
+		# Nested list: "- - x" means this item is itself a list. (Not reached for an anchored
+		# item -- "- &a - x" is vanishingly rare and left to the scalar/map path.)
+		elif anchor_name == "" and after_trimmed.begins_with("-"):
+			item_value = _parse_nested_dash_list(cur, j, item_indent, indent)
 		# "- |" is a block scalar, not the plain scalar "|". A bare header holds no colon,
 		# so _split_key_value sees nothing and the plain-scalar branch below would fold the
 		# header together with its own content. The dash's column is the parent: the content
 		# has to beat it, and an indicator like ">1" is measured from it.
-		if _is_block_header(item_text):
-			result.append(_consume_block_scalar(cur, item_text, indent))
-			continue
-
-		var kv = _split_key_value(item_text)
-		if kv[1] == null and not item_text.ends_with(":"):
-			# Plain scalar item. "- [" also lands here: _split_key_value finds no
-			# top-level colon in it. A continuation line only has to beat the dash's
-			# own indent, so the threshold is `indent`, not `item_indent`.
-			result.append(_parse_scalar_or_quoted(cur, item_text, indent))
+		elif _is_block_header(item_text):
+			item_value = _consume_block_scalar(cur, item_text, indent)
 		else:
-			# Map item: first pair is inline, remaining keys sit at item_indent.
-			var d = {}
-			var k = _unquote_key(kv[0])
-			var v = kv[1]
-			if v == null:
-				var nj = cur.peek()
-				if nj != -1 and _get_indent_level(cur.line_at(nj)) >= item_indent \
-						and _get_indent_level(cur.line_at(nj)) > indent:
-					d[k] = _parse_block(cur, _get_indent_level(cur.line_at(nj)))
-				else:
-					d[k] = null
-			elif v != null and _is_block_header(v):
-				# The key is the parent, so an indicator like "|2" counts from item_indent.
-				# A sibling key sits AT item_indent and so still ends the block, since the
-				# scan stops on any line at or shallower than its parent.
-				d[k] = _consume_block_scalar(cur, v, item_indent)
+			var kv = _split_key_value(item_text)
+			if kv[1] == null and not item_text.ends_with(":"):
+				# Plain scalar item. "- [" also lands here: _split_key_value finds no
+				# top-level colon in it. A continuation line only has to beat the dash's
+				# own indent, so the threshold is `indent`, not `item_indent`.
+				item_value = _parse_scalar_or_quoted(cur, item_text, indent)
 			else:
-				# Runs before _merge_item_keys, so a multi-line flow here is fully
-				# consumed and the sibling-key scan starts below it. The threshold is
-				# item_indent so a sibling key at that column is not folded into the
-				# value as if it were a continuation line.
-				d[k] = _parse_scalar_or_quoted(cur, v, item_indent)
-			_merge_item_keys(cur, d, item_indent)
-			result.append(d)
+				# Map item: first pair is inline, remaining keys sit at item_indent.
+				item_value = _parse_list_map_item(cur, kv, item_indent, indent)
+
+		if anchor_name != "":
+			_anchors[anchor_name] = item_value
+		result.append(item_value)
 	return result
 
 
-# Collect additional "key: value" pairs of a list item's map (lines at exactly
-# item_indent that are not themselves list entries).
-func _merge_item_keys(cur: _Cursor, d: Dictionary, item_indent: int) -> void:
+# Parse a mapping that is a list item: its first "key: value" pair rode in on the dash line
+# (already split into `kv`), its remaining keys sit on the following lines at item_indent.
+# Handles a "<<" merge key in either position, folding the merges in once the map is built.
+func _parse_list_map_item(cur: _Cursor, kv: Array, item_indent: int, indent: int) -> Dictionary:
+	var d = {}
+	var merges: Array = []
+	if kv[2] and kv[0].strip_edges() == "<<":
+		_collect_merge_sources(_parse_list_item_value(cur, kv[1], item_indent, indent),
+				_line(cur.i - 1), merges)
+	else:
+		d[_unquote_key(kv[0])] = _parse_list_item_value(cur, kv[1], item_indent, indent)
+	_merge_item_keys(cur, d, item_indent, merges)
+	_apply_merges(d, merges)
+	return d
+
+
+# The value of a list item's first inline pair. Its null case is special: the nested block has
+# to beat BOTH the item column and the dash's own indent, which _parse_value_after_key does not
+# express -- so it is spelled out here. Otherwise it mirrors _parse_key_value (anchor, alias,
+# block scalar, scalar), all measured from item_indent.
+func _parse_list_item_value(cur: _Cursor, v, item_indent: int, indent: int) -> Variant:
+	if v == null:
+		var nj = cur.peek()
+		if nj != -1 and _get_indent_level(cur.line_at(nj)) >= item_indent \
+				and _get_indent_level(cur.line_at(nj)) > indent:
+			return _parse_block(cur, _get_indent_level(cur.line_at(nj)))
+		return null
+	var an = _strip_anchor(v)
+	if an[0] != "":
+		var node = _parse_list_item_value(cur, null if an[1].is_empty() else an[1], item_indent, indent)
+		_anchors[an[0]] = node
+		return node
+	if _is_alias(v):
+		return _resolve_alias(v.substr(1), _line(cur.i - 1))
+	if _is_block_header(v):
+		return _consume_block_scalar(cur, v, item_indent)
+	return _parse_scalar_or_quoted(cur, v, item_indent)
+
+
+# Collect additional "key: value" pairs of a list item's map (lines at exactly item_indent
+# that are not themselves list entries). A "<<" here feeds the shared `merges` list, which the
+# caller applies once the whole item map is built.
+func _merge_item_keys(cur: _Cursor, d: Dictionary, item_indent: int, merges: Array) -> void:
 	while true:
 		var j = cur.peek()
 		if j == -1:
@@ -670,15 +767,12 @@ func _merge_item_keys(cur: _Cursor, d: Dictionary, item_indent: int) -> void:
 		if _is_list_line(content):
 			break
 		var kv = _split_key_value(content)
-		var k = _unquote_key(kv[0])
 		var v = kv[1]
 		cur.i = j + 1
-		if v == null:
-			d[k] = _parse_value_after_key(cur, item_indent)
-		elif v != null and _is_block_header(v):
-			d[k] = _consume_block_scalar(cur, v, item_indent)
-		else:
-			d[k] = _parse_scalar_or_quoted(cur, v, item_indent)
+		if kv[2] and kv[0].strip_edges() == "<<":
+			_collect_merge_sources(_parse_key_value(cur, v, item_indent), _line(j), merges)
+			continue
+		d[_unquote_key(kv[0])] = _parse_key_value(cur, v, item_indent)
 
 
 # Handle "- - x" by reconstructing a sub-document at item_indent: the remainder
@@ -842,8 +936,9 @@ func _parse_scalar_or_quoted(cur: _Cursor, s: String, indent: int) -> Variant:
 	# its lines RAW -- _complete_flow strips each one, and the folding rules turn on exactly
 	# the leading and trailing whitespace that would destroy.
 	if s.begins_with('"') or s.begins_with("'"):
-		return _parse_value(_complete_quoted(cur, s))
-	return _parse_value(_continue_plain_scalar(cur, _complete_flow(cur, s), indent))
+		return _parse_value(_complete_quoted(cur, s), self, _line(cur.i - 1))
+	return _parse_value(_continue_plain_scalar(cur, _complete_flow(cur, s), indent),
+			self, _line(cur.i - 1))
 
 
 # If `first` opens a quoted scalar it does not close, pull the following lines off the cursor
@@ -966,18 +1061,36 @@ static func _find_key_separator(s: String) -> int:
 
 # An entry in a flow sequence may itself be a single "key: value" pair, which YAML reads as a
 # one-entry mapping: "[foo: bar]" is a sequence holding {foo: bar}, not the scalar "foo: bar".
-static func _parse_flow_entry(item: String) -> Variant:
+# `p` is the parser (null on the dump path), threaded so an entry may carry "&a"/"*a".
+static func _parse_flow_entry(item: String, p = null, line: int = -1) -> Variant:
 	var idx = _find_key_separator(item)
 	if idx == -1:
-		return _parse_value(item)
+		return _parse_value(item, p, line)
 	var v = item.substr(idx + 1).strip_edges()
-	return {_parse_value(item.substr(0, idx)): (null if v.is_empty() else _parse_value(v))}
+	return {_parse_value(item.substr(0, idx), p, line):
+			(null if v.is_empty() else _parse_value(v, p, line))}
 
 
-# Convert a string token to the appropriate Godot type.
-static func _parse_value(s: String) -> Variant:
+# Convert a string token to the appropriate Godot type. `p` is the parser instance, passed only
+# from the parse path; on the dump path it is null and anchors/aliases are not meaningful, so the
+# behaviour is exactly as before. `line` is used only to place an anchor/alias error.
+static func _parse_value(s: String, p = null, line: int = -1) -> Variant:
 	s = s.strip_edges()
 	if s.is_empty(): return null
+
+	# A flow entry may be an alias ("*a") or carry an anchor ("&a 1"). Resolved before type
+	# detection, so "&a 1" types as the int 1 rather than the string "&a 1".
+	if p != null:
+		if _is_alias(s):
+			return p._resolve_alias(s.substr(1), line)
+		if s.begins_with("&"):
+			var an = _strip_anchor(s)
+			if an[0] == "":
+				p._error(line, "anchor name expected after '&'")
+			else:
+				var node = _parse_value(an[1], p, line)
+				p._anchors[an[0]] = node
+				return node
 
 	# YAML 1.2 core schema accepts any case for these. `yes`/`no`/`on`/`off` are
 	# deliberately NOT booleans -- that is YAML 1.1 -- and _scalar() already quotes
@@ -1008,7 +1121,7 @@ static func _parse_value(s: String) -> Variant:
 		var result = []
 		if not inner.strip_edges().is_empty():
 			for item in _flow_items(inner):
-				result.append(_parse_flow_entry(item))
+				result.append(_parse_flow_entry(item, p, line))
 		return result
 
 	# Inline flow mapping.
@@ -1019,11 +1132,11 @@ static func _parse_value(s: String) -> Variant:
 			for item in _flow_items(inner):
 				var idx = _find_top_level(item, ":")
 				if idx == -1:
-					result[_parse_value(item)] = null
+					result[_parse_value(item, p, line)] = null
 				else:
-					var k = _parse_value(item.substr(0, idx))
+					var k = _parse_value(item.substr(0, idx), p, line)
 					var v = item.substr(idx + 1).strip_edges()
-					result[k] = null if v.is_empty() else _parse_value(v)
+					result[k] = null if v.is_empty() else _parse_value(v, p, line)
 		return result
 
 	# Quoted string.
@@ -1167,6 +1280,95 @@ static func _unquote_key(k: String) -> String:
 	if (k.begins_with('"') and k.ends_with('"')) or (k.begins_with("'") and k.ends_with("'")):
 		return _parse_quoted_string(k)
 	return k
+
+
+# ---------------------------------------------------------------------------
+# Anchors (&name), aliases (*name) and merge keys (<<).
+#
+# There is no node type to hang an anchor on -- the parser builds native Godot values
+# directly -- so an anchor is registered by capturing the RETURN value of the sub-parse
+# at each call site, keyed in `_anchors`. An alias is resolved by handing that same object
+# back: aliases share their anchor's node rather than copying it, which is YAML's own node
+# identity. Because an anchor is only registered AFTER its node has finished parsing, a
+# self-referential alias ("&a [*a]") sees `a` still undefined and fails as an unknown alias
+# rather than building a cycle -- so a shared reference can never form an infinite structure.
+#
+# Detection is on the RAW leading character. "&" and "*" are indicators only when they open
+# an unquoted node, so a quoted value like "\"&x *y\"" is an ordinary string and passes
+# through untouched -- which is what keeps such strings round-tripping through dump().
+# ---------------------------------------------------------------------------
+
+# A character that ends an anchor or alias name: whitespace, or a flow indicator. Reading up
+# to it is what makes "&a" correct both on its own line and packed into a flow ("[&a 1, *a]").
+static func _is_name_end(c: String) -> bool:
+	return c == " " or c == "\t" or c == "," or c == "[" or c == "]" or c == "{" or c == "}"
+
+
+# The anchor name in a leading "&name", or "".
+static func _anchor_name(content: String) -> String:
+	if not content.begins_with("&"):
+		return ""
+	var i = 1
+	while i < content.length() and not _is_name_end(content[i]):
+		i += 1
+	return content.substr(1, i - 1)
+
+
+# Split a leading "&name" off `content`. Returns [name, remaining], with `remaining`
+# left-stripped of the spaces/tabs between the anchor and its node. [ "", content ] when
+# there is no anchor. An empty name ("&" alone, or "& x") is left for the caller to report.
+static func _strip_anchor(content: String) -> Array:
+	var name = _anchor_name(content)
+	if name == "":
+		return ["", content]
+	return [name, content.substr(1 + name.length()).lstrip(" \t")]
+
+
+# True when `content` is a node consisting SOLELY of an alias "*name": a leading unquoted "*",
+# a name, and nothing after it. "*a b" is malformed, not the plain scalar it looks like -- an
+# unquoted leading "*" is always an alias indicator.
+static func _is_alias(content: String) -> bool:
+	var s = content.strip_edges()
+	if not s.begins_with("*") or s.length() < 2:
+		return false
+	for i in range(1, s.length()):
+		if _is_name_end(s[i]):
+			return false
+	return true
+
+
+# Resolve "*name" to the node its anchor was attached to. Unknown alias -> error and null.
+func _resolve_alias(name: String, line: int) -> Variant:
+	if not _anchors.has(name):
+		_error(line, "unknown alias '*%s'" % name)
+		return null
+	# Shared reference: the alias IS the anchor's node, not a copy of it.
+	return _anchors[name]
+
+
+# Gather the mapping(s) a "<<" merge key pulls in. Its value is one mapping ("<<: *a"), or a
+# sequence of them ("<<: [*a, *b]"). Anything else is an error: a merge source has to be a map.
+func _collect_merge_sources(node: Variant, line: int, merges: Array) -> void:
+	if node is Dictionary:
+		merges.append(node)
+	elif node is Array:
+		for element in node:
+			if element is Dictionary:
+				merges.append(element)
+			else:
+				_error(line, "merge key '<<' sequence entry is not a mapping")
+	else:
+		_error(line, "merge key '<<' expects a mapping or a sequence of mappings")
+
+
+# Fold collected merge sources into `target`. Applied AFTER the map is built, so a key the
+# map defines explicitly is already present and wins; among sources, earlier ones fill first
+# and so win over later ones -- exactly YAML's merge precedence.
+func _apply_merges(target: Dictionary, merges: Array) -> void:
+	for m in merges:
+		for k in m:
+			if not target.has(k):
+				target[k] = m[k]
 
 
 # Split "key: value" on the first top-level ": " (or trailing ":").

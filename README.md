@@ -2,7 +2,7 @@
 
 A YAML parser written in GDScript, you can easily include a single file to provide parsing in your plugin package without needing a separate dependency.
 
-Not 100% spec compliant, features like tags and anchors are not supported at this time. For a fully featured parser check out some of the other Godot plugins that wrap a native library, they will also be much quicker.
+Not 100% spec compliant -- tags are not supported, for instance. For a fully featured parser check out some of the other Godot plugins that wrap a native library, they will also be much quicker.
 
 
 ## Basic usage
@@ -58,12 +58,40 @@ When an error occurs `parse()` returns `ERR_PARSE_ERROR` and `data` is `null`.
 
 The built in editor is setup to convert indentation to tabs by default, this will break your files.
 
-Use an external editor with "tabs to spaces” enabled.
+Disable the setting or Use an external editor with "tabs to spaces” enabled.
+
+
+## Anchors, aliases and merge keys
+
+Anchors (`&name`), aliases (`*name`) and merge keys (`<<:`) are supported, in both block and
+flow context.
+
+```yaml
+defaults: &defaults
+  retries: 3
+  timeout: 30
+
+service:
+  <<: *defaults      # pull in every key of `defaults`
+  timeout: 60        # ...but a key written here wins over a merged one
+```
+
+- An **alias resolves to the same object** its anchor labelled -- not a copy. Since Godot
+  Dictionaries and Arrays are reference types, mutating the data reached through one alias
+  mutates every use of that anchor. Treat parsed anchored nodes as shared.
+- A **merge key** (`<<:`) takes a single mapping (`<<: *a`) or a sequence of them
+  (`<<: [*a, *b]`). A key the mapping defines explicitly always wins over a merged one, and
+  among merged sources the earlier one wins. The `<<` key itself never appears in the result.
+- An **unknown alias** (no matching anchor) is a parse error, as is a merge whose source is not
+  a mapping. Anchors are scoped to a single document -- an alias cannot reach an anchor defined
+  in an earlier `---` document.
+- **Recursive anchors** are not supported: an anchor is registered only after its node finishes
+  parsing, so a self-reference (`&a [*a]`) surfaces as an unknown alias rather than a cycle.
+- `dump` does not emit anchors; it writes each node out in full.
 
 
 ## Limitations
 
-- No anchors, aliases or merge keys (`&a`, `*a`, `<<:`); they pass through as literal strings.
 - No tags (`!!str`, `!Foo`); they pass through as literal strings. Directives (`%YAML`, `%TAG`) are
   recognised and ignored, so a `%TAG` shorthand resolves to nothing.
 - A quote or bracket appearing part way through a plain scalar is treated as if it opened one, so a
@@ -94,8 +122,8 @@ godot --headless --script res://tests/yaml_test_suite/conformance_test.gd
 ```
 
 It reports two numbers. 
- - **Correctness:** Currently 221/279 of tests that have a JSON target pass. The fails are mostly tag and anchor related.
- - **Strictness:** of the 94 documents the suite says must be *rejected*, it rejects **38**. So there is the potential for malformed content to pass by undetected.
+ - **Correctness:** Currently 236/279 of tests that have a JSON target pass. The fails are mostly tag related, plus a few anchor cases (such as an anchor on a mapping key).
+ - **Strictness:** of the 94 documents the suite says must be *rejected*, it rejects **37**. So there is the potential for malformed content to pass by undetected.
 
 ## Origin
 

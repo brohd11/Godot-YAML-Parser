@@ -14,7 +14,7 @@ ZyxPopupWrapper:
 
 editor_node_ref:
     kind: clone
-    version: "0.3.2"
+    version: "0.3.3"
     tag: "main"
     url: https://github.com/brohd11/godot-editor-node-ref.git
     path: addons/addon_lib/editor_node_ref
@@ -36,15 +36,9 @@ PluginExporter:
 SyntaxPlus:
     kind: clone
     path: addons/syntax_plus
-    version: "1.0.1"
+    version: "1.0.2"
     tag: "main"
     url: https://github.com/brohd11/godot-gd-syntax-plus.git
-
-Godot-TreeSitter-Wrapper:
-    path: addons/tree_sitter_gd
-    version: "1.0.1"
-    tag: "v1.0.1"
-    url: https://github.com/brohd11/Godot-TreeSitter-Wrapper/releases/download/v1.0.1/tree-sitter-gd-1.0.1.zip
 
 CodeCompletions:
     kind: clone
@@ -52,3 +46,9 @@ CodeCompletions:
     tag: "main"
     url: https://github.com/brohd11/godot-code-completions.git
     path: addons/code_completions
+
+godot-tree-sitter-gd:
+    path: addons/tree_sitter_gd
+    version: "1.0.3"
+    tag: "v1.0.3"
+    url: https://github.com/brohd11/godot-tree-sitter-gd/releases/download/v1.0.3/tree-sitter-gd-v1.0.3.zip
