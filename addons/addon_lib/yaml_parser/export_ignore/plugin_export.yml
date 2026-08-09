@@ -8,6 +8,7 @@ options:
   include_import: true
   ignore_src: false
   use_tag_in_cfg: true
+  include_project_license: true
   remove_cfg_deps: true
   include_min_version: true
   move_global_files: false
