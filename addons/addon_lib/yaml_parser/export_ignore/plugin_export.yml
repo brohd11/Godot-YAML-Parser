@@ -2,6 +2,8 @@ export_root: "res://addons/addon_lib/yaml_parser/export_ignore/exports"
 plugin_folder: "YamlParser{{version=yaml_parser}}"
 pre_script: "res://addons/addon_lib/yaml_parser/export_ignore/pre_post_export.gd"
 post_script: "res://addons/addon_lib/yaml_parser/export_ignore/pre_post_export.gd"
+build_require: []
+compile_require: []
 options:
   overwrite: true
   include_uid: true
@@ -26,7 +28,8 @@ options:
 exports:
   -
     source: "res://addons/addon_lib/yaml_parser"
-    export_folder: "yaml-parser{{version=yaml_parser}}/addon_lib/yaml_parser"
+    export_name: "yaml-parser{{version=yaml_parser}}"
+    export_folder: "addon_lib/yaml_parser"
     exclude:
       directories:
         - "res://addons/addon_lib/yaml_parser/export_ignore"
