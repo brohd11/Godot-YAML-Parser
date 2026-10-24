@@ -1,7 +1,7 @@
-export_root: "res://addons/addon_lib/yaml_parser/export_ignore/exports"
+export_root: "res://addons/_lib/yaml_parser/export_ignore/exports"
 plugin_folder: "YamlParser{{version=yaml_parser}}"
-pre_script: "res://addons/addon_lib/yaml_parser/export_ignore/pre_post_export.gd"
-post_script: "res://addons/addon_lib/yaml_parser/export_ignore/pre_post_export.gd"
+pre_script: ""
+post_script: ""
 build_require: []
 compile_require: []
 options:
@@ -27,12 +27,12 @@ options:
     parse_tres: {}
 exports:
   -
-    source: "res://addons/addon_lib/yaml_parser"
+    source: "res://addons/_lib/yaml_parser"
     export_name: "yaml-parser{{version=yaml_parser}}"
-    export_folder: "addon_lib/yaml_parser"
+    export_folder: "_lib/yaml_parser"
     exclude:
       directories:
-        - "res://addons/addon_lib/yaml_parser/export_ignore"
+        - "res://addons/_lib/yaml_parser/export_ignore"
       file_extensions: []
       files: []
     other_transfers: []
@@ -41,4 +41,4 @@ exports:
       parse_gd: {}
       parse_tscn: {}
       parse_tres: {}
-    remote_dir: "res://addons/addon_lib/yaml_parser/src/remote"
+    remote_dir: "res://addons/_lib/yaml_parser/src/remote"

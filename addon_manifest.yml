@@ -3,9 +3,10 @@ AddonLib:
     version: "2.1.0"
     tag: "main"
     url: https://github.com/brohd11/godot-addon-lib.git
-    path: addons/addon_lib/brohd
+    path: addons/_lib/brohd
 
 ZyxPopupWrapper:
+    name: "Zyx Popup Wrapper"
     kind: clone
     version: "0.3.2"
     tag: "main"
@@ -13,13 +14,15 @@ ZyxPopupWrapper:
     path: addons/zyx_popup_wrapper
 
 editor_node_ref:
+    name: "editor-node-ref"
     kind: clone
     version: "0.3.3"
     tag: "main"
     url: https://github.com/brohd11/godot-editor-node-ref.git
-    path: addons/addon_lib/editor_node_ref
+    path: addons/_lib/editor_node_ref
 
 Editor Console:
+    name: "Editor Console"
     kind: clone
     version: "0.7.0"
     tag: "main"
@@ -27,13 +30,15 @@ Editor Console:
     path: addons/editor_console
 
 PluginExporter:
+    name: "PackageExporter"
     kind: clone
     version: "0.7.4"
     tag: "main"
     url: https://github.com/brohd11/godot-plugin-exporter.git
-    path: addons/plugin_exporter
+    path: addons/package_exporter
 
 SyntaxPlus:
+    name: "SyntaxPlus"
     kind: clone
     path: addons/syntax_plus
     version: "1.0.2"
@@ -41,6 +46,7 @@ SyntaxPlus:
     url: https://github.com/brohd11/godot-gd-syntax-plus.git
 
 CodeCompletions:
+    name: "Code Completions"
     kind: clone
     version: "0.3.0"
     tag: "main"
@@ -49,23 +55,360 @@ CodeCompletions:
 
 github.com/brohd11/godot-util-r:
     name: "UtilRuntime"
-    path: addons/addon_lib/util_r
-    version: "0.1.0"
+    path: addons/_lib/util_r
+    version: "0.3.1"
     is_dependency: true
-    tag: "v0.1.0"
-    url: https://github.com/brohd11/godot-util-r/archive/refs/tags/v0.1.0.zip
+    tag: "v0.3.1"
+    url: https://github.com/brohd11/godot-util-r/archive/refs/tags/v0.3.1.zip
 
 github.com/brohd11/godot-singleton:
     name: "Singletons"
-    path: addons/addon_lib/singleton
-    version: "0.9.0"
+    path: addons/_lib/singleton
+    version: "0.9.1"
     is_dependency: true
-    tag: "v0.9.0"
-    url: https://github.com/brohd11/godot-singleton/archive/refs/tags/v0.9.0.zip
+    tag: "v0.9.1"
+    url: https://github.com/brohd11/godot-singleton/archive/refs/tags/v0.9.1.zip
 
 github.com/brohd11/godot-gdscript-lsp:
-    path: addons/addon_lib/gdscript_lsp
-    version: "0.1.2-beta"
+    path: addons/_lib/gdscript_lsp
+    version: "0.2.2"
     is_dependency: true
-    tag: "v0.1.2-beta"
-    url: https://github.com/brohd11/godot-gdscript-lsp/releases/download/v0.1.2-beta/gdscript-lsp-v0.1.2-beta.zip
+    tag: "v0.2.2"
+    url: https://github.com/brohd11/godot-gdscript-lsp/releases/download/v0.2.2/gdscript-lsp-v0.2.2.zip
+
+AtIcons:
+    lock: true
+    version: "1.1.1"
+    tag: "v1.1.1"
+    url: https://github.com/Voxybuns/at-icons/releases/download/v1.1.1/at-icons_v1.1.1.zip
+    path: addons/at-icons
+
+BottomPanelMod:
+    kind: clone
+    version: "0.1.0"
+    tag: "main"
+    url: https://github.com/brohd11/Godot-Bottom-Panel-Layout-Mod
+    path: addons/bottom_panel_mod
+
+ChunkSys:
+    kind: clone
+    version: "0.5.0"
+    tag: "grid-redesign"
+    url: https://github.com/brohd11/Godot-ChunkSys.git
+    path: addons/chunk_sys
+
+ContextMenuPlugins:
+    kind: clone
+    version: "0.2.1"
+    tag: "main"
+    url: https://github.com/brohd11/Godot-Context-Menu-Plugins.git
+    path: addons/context_menu_plugins
+
+DepMap:
+    name: "DepMap"
+    kind: clone
+    version: "0.1.0"
+    tag: "main"
+    url: https://github.com/brohd11/godot-dep-map.git
+    path: addons/_lib/dep_map
+
+DockManager:
+    kind: clone
+    version: "0.4.0"
+    tag: "main"
+    url: https://github.com/brohd11/godot-dock-manager.git
+    path: addons/_lib/dock_manager
+
+EditorExtensions:
+    kind: clone
+    version: "0.1.0"
+    tag: "main"
+    url: https://github.com/brohd11/Godot-Editor-Extensions.git
+    path: addons/editor_extensions
+
+EditorPanels:
+    kind: clone
+    version: "0.1.0"
+    tag: "main"
+    url: https://github.com/brohd11/Godot-Editor-Panels.git
+    path: addons/editor_panels
+
+Export Optimizer:
+    kind: clone
+    version: "0.1.0"
+    tag: "main"
+    url: https://github.com/brohd11/godot-export-optimizer.git
+    path: addons/export_optimizer
+
+FileSystemInstances:
+    kind: clone
+    version: "0.5.0"
+    tag: "main"
+    url: https://github.com/brohd11/Godot-FileSystem-Instances.git
+    path: addons/filesystem_instances
+
+GDScriptOptimizer:
+    kind: clone
+    version: "0.1.0"
+    tag: "main"
+    url: https://github.com/brohd11/godot-gdscript-optimizer.git
+    path: addons/_lib/gdscript_optimizer
+
+GDScriptParser:
+    name: "GDScriptParser"
+    kind: clone
+    version: "0.2.2"
+    tag: "main"
+    url: https://github.com/brohd11/godot-gdscript-parser.git
+    path: addons/_lib/gdscript_parser
+
+Git View:
+    kind: clone
+    version: "0.1.0"
+    tag: "main"
+    url: https://github.com/brohd11/Godot-Git-View.git
+    path: addons/git_view
+
+ModularBrowser:
+    kind: clone
+    version: "0.9.4"
+    tag: "main"
+    url: https://github.com/brohd11/Godot-Modular-Browser-Plugin.git
+    path: addons/modular_browser
+
+Namespace:
+    kind: clone
+    version: "0.6.3"
+    tag: "main"
+    url: https://github.com/brohd11/Godot-Pseudo-Namespace.git
+    path: addons/namespace
+
+PackageExporter:
+    kind: clone
+    version: "0.7.4"
+    tag: "main"
+    url: https://github.com/brohd11/godot-package-exporter.git
+    path: addons/package_exporter
+
+PluginDevTests:
+    kind: clone
+    tag: "main"
+    url: https://github.com/brohd11/godot-plugin-tests.git
+    path: tests
+
+PluginDevTools:
+    version: "0.1.0"
+    url: https://github.com/brohd11/godot-plugin-devtools/archive/refs/heads/main-dev.zip
+    path: addons/plugin_devtools
+
+PluginExporter Test:
+    kind: clone
+    version: "0.1.0"
+    tag: "main"
+    url: https://github.com/brohd11/godot-plugin-exporter-test-plugin.git
+    path: addons/plugin_exporter_test
+
+RayTool:
+    kind: clone
+    version: "0.1.0"
+    tag: "main"
+    url: https://github.com/brohd11/GodotRayTool.git
+    path: addons/ray_tool
+
+ScriptDock:
+    kind: clone
+    version: "0.2.0"
+    tag: "main"
+    url: https://github.com/brohd11/Godot-Script-Dock.git
+    path: addons/script_dock
+
+ScriptEditorExtensions:
+    kind: clone
+    version: "0.1.0"
+    tag: "main"
+    url: https://github.com/brohd11/Godot-Script-Editor-Extensions.git
+    path: addons/script_editor_extensions
+
+ScriptTabs:
+    kind: clone
+    version: "0.1.4"
+    tag: "main"
+    url: https://github.com/brohd11/Godot-Script-Tabs.git
+    path: addons/script_tabs
+
+SettingHelper:
+    kind: clone
+    version: "0.1.0"
+    tag: "main"
+    url: https://github.com/brohd11/godot-setting-helper.git
+    path: addons/_lib/setting_helper
+
+Terrain3D:
+    version: "1.0.2"
+    tag: "v1.0.2-stable"
+    url: https://github.com/TokisanGames/Terrain3D/releases/download/v1.0.2-stable/Terrain3D_v1.0.2-stable.zip
+    path: addons/terrain_3d
+
+TextureStream:
+    kind: clone
+    version: "0.1.0"
+    tag: "main"
+    url: https://github.com/brohd11/Godot-Texture-Stream.git
+    path: addons/_lib/texture_stream
+
+UtilEditor:
+    kind: clone
+    version: "0.1.0"
+    tag: "main"
+    url: https://github.com/brohd11/godot-util-e.git
+    path: addons/_lib/util_e
+
+YAMLParser:
+    version: "2.1.0"
+    tag: "v2.1.0"
+    url: https://github.com/brohd11/Godot-YAML-Parser/releases/download/v2.1.0/yaml-parser-2.1.0.zip
+    path: addons/_lib/yaml_parser
+
+brohd_cs:
+    kind: clone
+    version: "0.1.0"
+    tag: "main"
+    url: https://github.com/brohd11/godot-addon-lib-cs.git
+    path: addons/_lib/brohd_cs
+
+cam_control:
+    kind: clone
+    version: "0.1.0"
+    tag: "main"
+    url: https://github.com/brohd11/godot-cam-control.git
+    path: addons/_lib/cam_control
+
+dialog_form:
+    kind: clone
+    tag: "main"
+    url: https://github.com/brohd11/godot-dialog-form.git
+    path: addons/_lib/dialog_form
+
+dialogs:
+    kind: clone
+    tag: "main"
+    url: https://github.com/brohd11/godot-dialogs.git
+    path: addons/_lib/dialogs
+
+editor_filesystem:
+    kind: clone
+    tag: "main"
+    url: https://github.com/brohd11/godot-editor-filesystem.git
+    path: addons/_lib/editor_filesystem
+
+editor_parser:
+    kind: clone
+    tag: "main"
+    url: https://github.com/brohd11/godot-editor-parser.git
+    path: addons/_lib/editor_parser
+
+gdaddon:
+    kind: clone
+    version: "0.1.0"
+    tag: "main"
+    url: https://github.com/brohd11/gdaddon-EditorPlugin.git
+    path: addons/gdaddon
+
+git_service:
+    kind: clone
+    tag: "main"
+    url: https://github.com/brohd11/godot-git-service.git
+    path: addons/_lib/git_service
+
+godot-gdsh:
+    kind: clone
+    version: "0.2.2"
+    tag: "main"
+    name: "gdsh"
+    url: https://github.com/brohd11/godot-gdsh.git
+    path: addons/_lib/gdsh
+
+godot-string-map-gdext:
+    version: "0.2.0"
+    tag: "v0.2.0"
+    name: "string_map"
+    url: https://github.com/brohd11/godot-string-map-gdext/releases/download/v0.2.0/string-map-v0.2.0.zip
+    path: addons/_lib/string_map
+
+plugin_ui:
+    kind: clone
+    version: "0.1.0"
+    tag: "main"
+    name: "ui_plugin"
+    url: https://github.com/brohd11/godot-plugin-ui.git
+    path: addons/_lib/ui_plugin
+
+popup-wrapper:
+    kind: clone
+    version: "0.1.0"
+    tag: "main"
+    url: https://github.com/brohd11/godot-popup-wrapper.git
+    path: addons/_lib/popup_wrapper
+
+resource_view:
+    kind: clone
+    version: "0.1.0"
+    tag: "main"
+    url: https://github.com/brohd11/godot-resource-view.git
+    path: addons/_lib/resource_view
+
+signal_bus:
+    name: "signal_bus"
+    kind: clone
+    version: "0.1.0"
+    tag: "main"
+    url: https://github.com/brohd11/godot-signal-bus.git
+    path: addons/_lib/signal_bus
+
+sugar:
+    name: "sugar"
+    kind: clone
+    version: "0.1.0"
+    tag: "main"
+    url: https://github.com/brohd11/godot-sugar.git
+    path: addons/_lib/sugar
+
+syntax_highlighters:
+    name: "syntax_highlighters"
+    kind: clone
+    version: "0.1.0"
+    tag: "main"
+    url: https://github.com/brohd11/godot-syntax-highlighters.git
+    path: addons/_lib/syntax_highlighters
+
+tree:
+    kind: clone
+    version: "0.1.0"
+    tag: "main"
+    name: "gdsh-lib-tree"
+    url: https://github.com/brohd11/godot-gdsh-lib-tree.git
+    path: addons/_lib/gdsh_lib/tree
+
+tui:
+    kind: clone
+    version: "0.1.0"
+    tag: "main"
+    name: "gdsh-lub-tui"
+    url: https://github.com/brohd11/godot-gdsh-lib-tui.git
+    path: addons/_lib/gdsh_lib/tui
+
+ui_runtime:
+    name: "ui_runtime"
+    kind: clone
+    version: "0.1.0"
+    tag: "main"
+    url: https://github.com/brohd11/godot-ui-runtime.git
+    path: addons/_lib/ui_runtime
+
+utils:
+    kind: clone
+    version: "0.1.0"
+    tag: "main"
+    name: "gdsh-lib-utils"
+    url: https://github.com/brohd11/godot-gdsh-lib-utils.git
+    path: addons/_lib/gdsh_lib/utils

@@ -12,8 +12,35 @@ aliases/
 # the library this repo actually ships. A negation cannot re-include a path whose parent
 # directory is excluded, so the chain down to it has to be opened one level at a time.
 addons/*
-!addons/addon_lib/
-addons/addon_lib/*
-!addons/addon_lib/yaml_parser/
+!addons/_lib/
+addons/_lib/*
+!addons/_lib/yaml_parser/
 
 tests/yaml_test_suite/results.json
+/addons/_lib/brohd/
+/addons/code_completions/
+/addons/editor_console/
+/addons/plugin_exporter/
+/addons/syntax_plus/
+/addons/zyx_popup_wrapper/
+/addons/_lib/editor_node_ref/
+/addons/_lib/gdscript_lsp/
+/addons/_lib/singleton/
+/addons/_lib/util_r/
+/addons/_lib/dock_manager/
+/addons/_lib/gdsh/
+/addons/_lib/popup_wrapper/
+/addons/_lib/setting_helper/
+/addons/_lib/util_e/
+/addons/_lib/ui_plugin/
+/addons/_lib/ui_runtime/
+/addons/_lib/syntax_highlighters/
+/addons/_lib/signal_bus/
+/addons/_lib/sugar/
+/addons/_lib/resource_view/
+/addons/_lib/git_service/
+/addons/_lib/gdscript_parser/
+/addons/_lib/dialogs/
+/addons/_lib/editor_filesystem/
+/addons/_lib/editor_parser/
+/addons/_lib/dep_map/
