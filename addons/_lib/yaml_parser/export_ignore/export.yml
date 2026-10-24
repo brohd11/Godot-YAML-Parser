@@ -29,7 +29,7 @@ exports:
   -
     source: "res://addons/_lib/yaml_parser"
     export_name: "yaml-parser{{version=yaml_parser}}"
-    export_folder: "_lib/yaml_parser"
+    export_folder: "addons/_lib/yaml_parser"
     exclude:
       directories:
         - "res://addons/_lib/yaml_parser/export_ignore"
